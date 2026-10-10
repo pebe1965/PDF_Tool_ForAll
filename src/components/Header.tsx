@@ -1,14 +1,15 @@
 import React from 'react';
-import { FileEdit, FileStack, ShieldCheck, Laptop, Tablet } from 'lucide-react';
+import { FileEdit, FileStack, ShieldCheck, Laptop, Tablet, Sparkles } from 'lucide-react';
 import { APP_VERSION } from '../config';
 import { UpdateNotification } from './UpdateNotification';
 
 interface HeaderProps {
   activeTab: 'editor' | 'merge';
   onTabChange: (tab: 'editor' | 'merge') => void;
+  onOpenAiAssistant?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
+export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, onOpenAiAssistant }) => {
   return (
     <header className="h-[68px] bg-white/80 backdrop-blur-md border-b border-[#D2D2D7]/60 px-6 flex items-center justify-between sticky top-0 z-30 select-none">
       {/* Brand Logo & Name */}
@@ -56,8 +57,19 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
         </button>
       </nav>
 
-      {/* Right: Updates, Security & Version indicator */}
+      {/* Right: Updates, AI Assistant, Security & Version indicator */}
       <div className="flex items-center gap-3">
+        {onOpenAiAssistant && (
+          <button
+            onClick={onOpenAiAssistant}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-xs font-semibold shadow-md shadow-indigo-500/20 transition hover:scale-105 active:scale-95"
+            title="Dokument mit Gemini KI analysieren, zusammenfassen, übersetzen oder korrigieren"
+          >
+            <Sparkles size={14} className="animate-pulse" />
+            <span>Gemini KI</span>
+          </button>
+        )}
+
         {/* Dynamic Update Notification from GitHub */}
         <UpdateNotification />
 

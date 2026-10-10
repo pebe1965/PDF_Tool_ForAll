@@ -7,6 +7,7 @@ export function App() {
   const [activeTab, setActiveTab] = useState<'editor' | 'merge'>('editor');
   const [sharedPdfBytes, setSharedPdfBytes] = useState<ArrayBuffer | null>(null);
   const [sharedFileName, setSharedFileName] = useState<string>('Dokument.pdf');
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
 
   // When Editor updates its working document
   const handleEditorPdfUpdate = (bytes: ArrayBuffer, fileName: string) => {
@@ -23,7 +24,14 @@ export function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F5F5F7] text-[#1D1D1F]">
-      <Header activeTab={activeTab} onTabChange={setActiveTab} />
+      <Header
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onOpenAiAssistant={() => {
+          setActiveTab('editor');
+          setIsAiModalOpen(true);
+        }}
+      />
       <main className="flex-1 overflow-hidden relative">
         {/* We keep both views mounted and toggle visibility so no user state or uploads are lost! */}
         <div className={`h-full w-full ${activeTab === 'editor' ? 'block' : 'hidden'}`}>
@@ -32,6 +40,8 @@ export function App() {
             sharedFileName={sharedFileName}
             onPdfUpdate={handleEditorPdfUpdate}
             onOpenMergeTab={() => setActiveTab('merge')}
+            isAiModalOpen={isAiModalOpen}
+            onToggleAiModal={setIsAiModalOpen}
           />
         </div>
 

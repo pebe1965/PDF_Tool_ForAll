@@ -16,10 +16,12 @@ import {
   FileStack,
   FolderOpen,
   Image as ImageIcon,
+  Sparkles,
 } from 'lucide-react';
 import { pdfjsLib } from '../lib/pdfWorker';
 import { AnnotationLayer } from './AnnotationLayer';
 import { SignatureModal } from './SignatureModal';
+import { GeminiAiModal } from './GeminiAiModal';
 import { Annotation, TextAnnotation, SignatureAnnotation, ImageAnnotation } from '../types/pdf';
 import {
   applyAnnotationsToPdf,
@@ -36,6 +38,8 @@ interface PdfEditorViewProps {
   sharedFileName: string;
   onPdfUpdate: (bytes: ArrayBuffer, fileName: string) => void;
   onOpenMergeTab?: () => void;
+  isAiModalOpen?: boolean;
+  onToggleAiModal?: (open: boolean) => void;
 }
 
 export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
@@ -43,6 +47,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   sharedFileName,
   onPdfUpdate,
   onOpenMergeTab,
+  isAiModalOpen: externalIsAiModalOpen,
+  onToggleAiModal,
 }) => {
   const [file, setFile] = useState<File | null>(null);
   const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
@@ -58,6 +64,13 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   // Tools: 'select' | 'add-text'
   const [activeTool, setActiveTool] = useState<'select' | 'add-text'>('select');
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
+  const [internalIsAiModalOpen, setInternalIsAiModalOpen] = useState(false);
+
+  const isAiOpen = externalIsAiModalOpen !== undefined ? externalIsAiModalOpen : internalIsAiModalOpen;
+  const setAiOpen = (val: boolean) => {
+    if (onToggleAiModal) onToggleAiModal(val);
+    setInternalIsAiModalOpen(val);
+  };
 
   // Annotations list
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -395,6 +408,56 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     setSelectedAnnId(newSigAnn.id);
   };
 
+  // Insert AI generated text into current page
+  const handleInsertTextFromAi = (text: string) => {
+    const newTextAnn: TextAnnotation = {
+      id: `text_${Date.now()}`,
+      type: 'text',
+      pageNumber: currentPage,
+      x: 0.1,
+      y: 0.15,
+      width: 0.78,
+      text: text,
+      fontSize: 13,
+      color: '#000000',
+      backgroundColor: '#FFFFFF',
+    };
+
+    setAnnotations((prev) => [...prev, newTextAnn]);
+    setSelectedAnnId(newTextAnn.id);
+    setAiOpen(false);
+  };
+
+  // Insert AI generated text as a brand new page
+  const handleInsertAsNewPageFromAi = async (text: string) => {
+    if (!pdfBytes) return;
+    try {
+      const updatedBytes = await addBlankPageToPdf(pdfBytes);
+      const newPageNum = numPages + 1;
+      await reloadPdfFromBuffer(updatedBytes, newPageNum);
+
+      const newTextAnn: TextAnnotation = {
+        id: `text_${Date.now()}`,
+        type: 'text',
+        pageNumber: newPageNum,
+        x: 0.08,
+        y: 0.08,
+        width: 0.84,
+        text: text,
+        fontSize: 13,
+        color: '#000000',
+        backgroundColor: 'transparent',
+      };
+
+      setAnnotations((prev) => [...prev, newTextAnn]);
+      setSelectedAnnId(newTextAnn.id);
+      setAiOpen(false);
+    } catch (err) {
+      console.error('Fehler beim Einfügen als neue Seite:', err);
+      alert('Konnte keine neue Seite für den KI-Text anlegen.');
+    }
+  };
+
   // Update annotation
   const handleUpdateAnnotation = (updated: Annotation) => {
     setAnnotations((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
@@ -555,6 +618,17 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                   }
                 }}
               />
+
+              <div className="w-[1px] h-4 bg-gray-200 mx-0.5" />
+
+              <button
+                onClick={() => setAiOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-indigo-500/20 transition hover:scale-105 active:scale-95"
+                title="Mit Gemini KI analysieren, zusammenfassen, übersetzen oder Text erstellen"
+              >
+                <Sparkles size={15} className="animate-pulse" />
+                <span>Gemini KI</span>
+              </button>
             </div>
 
             {/* Middle: Page & Zoom Controls */}
@@ -800,6 +874,17 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         isOpen={isSignatureModalOpen}
         onClose={() => setIsSignatureModalOpen(false)}
         onConfirmSignature={handleAddSignature}
+      />
+
+      {/* Gemini AI Assistant Modal / Slide-Over */}
+      <GeminiAiModal
+        isOpen={isAiOpen}
+        onClose={() => setAiOpen(false)}
+        pdfBytes={pdfBytes}
+        currentPage={currentPage}
+        numPages={numPages}
+        onInsertTextIntoPage={handleInsertTextFromAi}
+        onInsertAsNewPage={handleInsertAsNewPageFromAi}
       />
     </div>
   );
