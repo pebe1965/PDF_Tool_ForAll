@@ -15,11 +15,12 @@ import {
   Trash2,
   FileStack,
   FolderOpen,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { pdfjsLib } from '../lib/pdfWorker';
 import { AnnotationLayer } from './AnnotationLayer';
 import { SignatureModal } from './SignatureModal';
-import { Annotation, TextAnnotation, SignatureAnnotation } from '../types/pdf';
+import { Annotation, TextAnnotation, SignatureAnnotation, ImageAnnotation } from '../types/pdf';
 import {
   applyAnnotationsToPdf,
   downloadPdf,
@@ -27,6 +28,7 @@ import {
   addBlankPageToPdf,
   appendPdfToPdf,
   deletePageFromPdf,
+  processImageFile,
 } from '../lib/pdfEngine';
 
 interface PdfEditorViewProps {
@@ -277,16 +279,104 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     setActiveTool('select');
   };
 
-  // Duplicate an existing text annotation
-  const handleDuplicateAnnotation = (ann: TextAnnotation) => {
-    const copy: TextAnnotation = {
+  // Duplicate an existing annotation (text or image)
+  const handleDuplicateAnnotation = (ann: TextAnnotation | ImageAnnotation) => {
+    const copy = {
       ...ann,
-      id: `text_${Date.now()}`,
-      y: Math.min(0.92, ann.y + 0.05),
+      id: `${ann.type}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      x: Math.min(0.92, ann.x + 0.03),
+      y: Math.min(0.92, ann.y + 0.03),
     };
-    setAnnotations((prev) => [...prev, copy]);
+    setAnnotations((prev) => [...prev, copy as any]);
     setSelectedAnnId(copy.id);
   };
+
+  // Insert image or screenshot
+  const handleInsertImageFile = async (
+    fileOrBlob: Blob,
+    fileName: string = 'Bild',
+    coords?: { x: number; y: number }
+  ) => {
+    try {
+      const { dataUrl, aspectRatio } = await processImageFile(fileOrBlob);
+
+      // Target initial width ~28% of page so it is easy to place and resize
+      let initialWidth = 0.28;
+      const pageAspect =
+        canvasDimensions.width > 0 && canvasDimensions.height > 0
+          ? canvasDimensions.width / canvasDimensions.height
+          : 0.707;
+
+      let initialHeight = (initialWidth * pageAspect) / aspectRatio;
+
+      // If image is very tall (e.g. vertical screenshot), cap height to 30%
+      if (initialHeight > 0.3) {
+        initialHeight = 0.3;
+        initialWidth = (initialHeight / pageAspect) * aspectRatio;
+      }
+
+      // If image is very wide, cap width to 45%
+      if (initialWidth > 0.45) {
+        initialWidth = 0.45;
+        initialHeight = (initialWidth * pageAspect) / aspectRatio;
+      }
+
+      // Position
+      let initialX = coords ? coords.x - initialWidth / 2 : (1 - initialWidth) / 2;
+      let initialY = coords ? coords.y - initialHeight / 2 : 0.25;
+
+      initialX = Math.max(0.02, Math.min(0.96 - initialWidth, initialX));
+      initialY = Math.max(0.02, Math.min(0.96 - initialHeight, initialY));
+
+      const newImgAnn: ImageAnnotation = {
+        id: `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        type: 'image',
+        pageNumber: currentPage,
+        x: initialX,
+        y: initialY,
+        width: initialWidth,
+        height: initialHeight,
+        dataUrl,
+        aspectRatio,
+        lockAspectRatio: true,
+        name: fileName,
+      };
+
+      setAnnotations((prev) => [...prev, newImgAnn]);
+      setSelectedAnnId(newImgAnn.id);
+    } catch (err) {
+      console.error('Fehler beim Einfügen des Bildes:', err);
+      alert('Das Bild konnte nicht geladen werden.');
+    }
+  };
+
+  // Clipboard paste listener (Cmd+V / Ctrl+V for screenshots)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      // Don't intercept when user is typing in a textarea or input
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+        return;
+      }
+
+      if (!pdfBytes || !e.clipboardData) return;
+
+      const items = e.clipboardData.items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            e.preventDefault();
+            handleInsertImageFile(blob, 'Screenshot');
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [pdfBytes, currentPage, canvasDimensions]);
 
   // Add signature
   const handleAddSignature = (dataUrl: string) => {
@@ -333,7 +423,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     }
   };
 
-  // Dropzone drag events
+  // Dropzone drag events for initial screen
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
   };
@@ -342,6 +432,26 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     e.preventDefault();
     const droppedFile = e.dataTransfer.files[0];
     if (droppedFile) {
+      handleFileChange(droppedFile);
+    }
+  };
+
+  // Viewport drag/drop handler (supports dropping image files onto the PDF page)
+  const handleViewportDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const droppedFile = e.dataTransfer.files[0];
+    if (!droppedFile) return;
+
+    if (droppedFile.type.startsWith('image/')) {
+      if (pageContainerRef.current && canvasDimensions.width > 0 && canvasDimensions.height > 0) {
+        const rect = pageContainerRef.current.getBoundingClientRect();
+        const dropX = (e.clientX - rect.left) / canvasDimensions.width;
+        const dropY = (e.clientY - rect.top) / canvasDimensions.height;
+        handleInsertImageFile(droppedFile, droppedFile.name, { x: dropX, y: dropY });
+      } else {
+        handleInsertImageFile(droppedFile, droppedFile.name);
+      }
+    } else if (droppedFile.type === 'application/pdf') {
       handleFileChange(droppedFile);
     }
   };
@@ -424,6 +534,27 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                 <PenTool size={16} />
                 <span>Unterschreiben</span>
               </button>
+
+              <button
+                onClick={() => document.getElementById('image-upload-editor')?.click()}
+                className="flex items-center gap-2 px-3 py-1.5 bg-[#F5F5F7] hover:bg-gray-200 text-[#1D1D1F] rounded-xl text-sm font-medium transition"
+                title="Bild oder Screenshot einfügen (oder direkt Strg+V / Cmd+V drücken)"
+              >
+                <ImageIcon size={16} />
+                <span>Bild / Screenshot</span>
+              </button>
+              <input
+                id="image-upload-editor"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) {
+                    handleInsertImageFile(e.target.files[0], e.target.files[0].name);
+                    e.target.value = '';
+                  }
+                }}
+              />
             </div>
 
             {/* Middle: Page & Zoom Controls */}
@@ -625,10 +756,14 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
             <div
               className="flex-1 overflow-auto flex items-start justify-center p-8 bg-[#E5E5EA]"
               onClick={() => setSelectedAnnId(null)}
+              onDragOver={handleDragOver}
+              onDrop={handleViewportDrop}
             >
               <div
                 ref={pageContainerRef}
                 onClick={handlePageClick}
+                onDragOver={handleDragOver}
+                onDrop={handleViewportDrop}
                 className={`relative bg-white shadow-2xl rounded-sm transition-all ${
                   activeTool === 'add-text' ? 'cursor-crosshair' : 'cursor-default'
                 }`}

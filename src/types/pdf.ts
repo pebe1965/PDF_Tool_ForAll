@@ -25,6 +25,20 @@ export interface SignatureAnnotation {
   dataUrl: string; // PNG base64
 }
 
+export interface ImageAnnotation {
+  id: string;
+  type: 'image';
+  pageNumber: number; // 1-indexed
+  x: number; // normalized 0..1
+  y: number; // normalized 0..1
+  width: number; // normalized 0..1 relative to page width
+  height: number; // normalized 0..1 relative to page height
+  dataUrl: string; // PNG base64
+  aspectRatio: number; // natural image width / height
+  lockAspectRatio?: boolean;
+  name?: string;
+}
+
 export interface FreehandDrawingAnnotation {
   id: string;
   type: 'drawing';
@@ -34,7 +48,7 @@ export interface FreehandDrawingAnnotation {
   strokeWidth: number;
 }
 
-export type Annotation = TextAnnotation | SignatureAnnotation | FreehandDrawingAnnotation;
+export type Annotation = TextAnnotation | SignatureAnnotation | FreehandDrawingAnnotation | ImageAnnotation;
 
 export interface PageMetadata {
   pageNumber: number;

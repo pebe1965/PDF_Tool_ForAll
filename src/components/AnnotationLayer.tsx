@@ -1,6 +1,16 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Trash2, Move, Plus, Minus, ArrowLeftRight, Copy } from 'lucide-react';
-import { TextAnnotation, SignatureAnnotation, Annotation } from '../types/pdf';
+import {
+  Trash2,
+  Move,
+  Plus,
+  Minus,
+  ArrowLeftRight,
+  Copy,
+  Lock,
+  Unlock,
+  ImageIcon,
+} from 'lucide-react';
+import { TextAnnotation, SignatureAnnotation, ImageAnnotation, Annotation } from '../types/pdf';
 
 interface AnnotationLayerProps {
   pageNumber: number;
@@ -9,7 +19,7 @@ interface AnnotationLayerProps {
   annotations: Annotation[];
   onUpdateAnnotation: (ann: Annotation) => void;
   onDeleteAnnotation: (id: string) => void;
-  onDuplicateAnnotation?: (ann: TextAnnotation) => void;
+  onDuplicateAnnotation?: (ann: TextAnnotation | ImageAnnotation) => void;
   selectedAnnotationId: string | null;
   onSelectAnnotation: (id: string | null) => void;
 }
@@ -307,6 +317,194 @@ const TextAnnotationItem: React.FC<{
   );
 };
 
+// Sub-component for inserted Image or Screenshot
+const ImageAnnotationItem: React.FC<{
+  imgAnn: ImageAnnotation;
+  pageWidth: number;
+  pageHeight: number;
+  isSelected: boolean;
+  onSelect: () => void;
+  onUpdate: (ann: ImageAnnotation) => void;
+  onDelete: () => void;
+  onDuplicate?: () => void;
+  onStartDrag: (e: React.PointerEvent) => void;
+  onStartCornerResize: (e: React.PointerEvent) => void;
+  onStartRightResize: (e: React.PointerEvent) => void;
+  onStartBottomResize: (e: React.PointerEvent) => void;
+}> = ({
+  imgAnn,
+  pageWidth,
+  pageHeight,
+  isSelected,
+  onSelect,
+  onUpdate,
+  onDelete,
+  onDuplicate,
+  onStartDrag,
+  onStartCornerResize,
+  onStartRightResize,
+  onStartBottomResize,
+}) => {
+  const leftPx = imgAnn.x * pageWidth;
+  const topPx = imgAnn.y * pageHeight;
+  const widthPx = imgAnn.width * pageWidth;
+  const heightPx = imgAnn.height * pageHeight;
+  const isLocked = imgAnn.lockAspectRatio !== false;
+
+  const adjustScale = (factor: number) => {
+    let newW = Math.max(0.04, Math.min(0.96 - imgAnn.x, imgAnn.width * factor));
+    let newH = isLocked
+      ? (newW * (pageWidth / pageHeight)) / imgAnn.aspectRatio
+      : Math.max(0.02, Math.min(0.96 - imgAnn.y, imgAnn.height * factor));
+
+    if (newH > 0.96 - imgAnn.y) {
+      newH = 0.96 - imgAnn.y;
+      if (isLocked) {
+        newW = newH * (pageHeight / pageWidth) * imgAnn.aspectRatio;
+      }
+    }
+
+    onUpdate({
+      ...imgAnn,
+      width: newW,
+      height: newH,
+    });
+  };
+
+  const toggleAspectLock = () => {
+    onUpdate({
+      ...imgAnn,
+      lockAspectRatio: !isLocked,
+    });
+  };
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: `${leftPx}px`,
+        top: `${topPx}px`,
+        width: `${widthPx}px`,
+        height: `${heightPx}px`,
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect();
+      }}
+      onPointerDown={onStartDrag}
+      className={`pointer-events-auto group cursor-move select-none ${
+        isSelected
+          ? 'ring-2 ring-[#0071E3] ring-offset-2 rounded-xl shadow-2xl bg-blue-50/20'
+          : 'hover:ring-1 hover:ring-blue-300 rounded-xl hover:bg-black/5'
+      }`}
+    >
+      <img
+        src={imgAnn.dataUrl}
+        alt={imgAnn.name || 'Bild'}
+        className="w-full h-full object-contain pointer-events-none rounded-lg"
+        draggable={false}
+      />
+
+      {/* Floating Toolbar when Selected */}
+      {isSelected && (
+        <div
+          className="absolute -top-11 left-0 flex items-center gap-1.5 bg-[#1D1D1F] text-white px-2.5 py-1.5 rounded-xl shadow-2xl text-xs z-30 select-none whitespace-nowrap"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {/* Proportional / Free Scale Toggle */}
+          <button
+            onClick={toggleAspectLock}
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition ${
+              isLocked
+                ? 'bg-[#0071E3] text-white'
+                : 'bg-white/10 text-gray-300 hover:text-white'
+            }`}
+            title={isLocked ? 'Seitenverhältnis gesperrt (proportional)' : 'Freie Skalierung'}
+          >
+            {isLocked ? <Lock size={12} /> : <Unlock size={12} />}
+            <span>{isLocked ? 'Proportional' : 'Frei'}</span>
+          </button>
+
+          <div className="w-[1px] h-3.5 bg-white/20" />
+
+          {/* Quick Scale Buttons */}
+          <div className="flex items-center gap-1 bg-white/10 px-1.5 py-0.5 rounded-lg">
+            <button
+              onClick={() => adjustScale(0.85)}
+              className="p-0.5 hover:bg-white/20 rounded text-gray-300 hover:text-white"
+              title="Kleiner"
+            >
+              <Minus size={12} />
+            </button>
+            <span className="text-[10px] text-gray-300 px-1">Größe</span>
+            <button
+              onClick={() => adjustScale(1.15)}
+              className="p-0.5 hover:bg-white/20 rounded text-gray-300 hover:text-white"
+              title="Größer"
+            >
+              <Plus size={12} />
+            </button>
+          </div>
+
+          <div className="w-[1px] h-3.5 bg-white/20" />
+
+          {/* Duplicate button */}
+          {onDuplicate && (
+            <button
+              onClick={onDuplicate}
+              className="p-1 hover:bg-white/20 rounded text-gray-300 hover:text-white transition"
+              title="Bild duplizieren"
+            >
+              <Copy size={13} />
+            </button>
+          )}
+
+          {/* Delete button */}
+          <button
+            onClick={onDelete}
+            className="p-1 hover:bg-red-500 rounded text-red-300 hover:text-white transition"
+            title="Löschen"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      )}
+
+      {/* Resize Handles (Visible when Selected) */}
+      {isSelected && (
+        <>
+          {/* Right Handle (Width) */}
+          <div
+            onPointerDown={onStartRightResize}
+            className="absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-8 bg-white border-2 border-[#0071E3] rounded-full flex items-center justify-center cursor-ew-resize shadow-md hover:scale-110 active:scale-110 transition z-30"
+            title="Breite anpassen"
+          >
+            <div className="w-0.5 h-3 bg-[#0071E3] rounded-full" />
+          </div>
+
+          {/* Bottom Handle (Height) */}
+          <div
+            onPointerDown={onStartBottomResize}
+            className="absolute left-1/2 -bottom-2 -translate-x-1/2 w-8 h-4 bg-white border-2 border-[#0071E3] rounded-full flex items-center justify-center cursor-ns-resize shadow-md hover:scale-110 active:scale-110 transition z-30"
+            title="Höhe anpassen"
+          >
+            <div className="h-0.5 w-3 bg-[#0071E3] rounded-full" />
+          </div>
+
+          {/* Bottom-Right Corner Handle (Primary Resize) */}
+          <div
+            onPointerDown={onStartCornerResize}
+            className="absolute -bottom-2 -right-2 w-6 h-6 bg-[#0071E3] text-white rounded-full flex items-center justify-center cursor-se-resize shadow-lg hover:scale-125 active:scale-125 transition z-30 ring-2 ring-white"
+            title="Größe durch Ziehen anpassen"
+          >
+            <div className="w-2 h-2 bg-white rounded-full" />
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   pageNumber,
   pageWidth,
@@ -345,10 +543,22 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     initialW: number;
   } | null>(null);
 
+  // Resizing state for Images
+  const [resizingImage, setResizingImage] = useState<{
+    id: string;
+    type: 'corner' | 'right' | 'bottom';
+    startX: number;
+    startY: number;
+    initialW: number;
+    initialH: number;
+    aspectRatio: number;
+    lockAspectRatio: boolean;
+  } | null>(null);
+
   const pageAnnotations = annotations.filter((a) => a.pageNumber === pageNumber);
 
   // Start dragging annotation
-  const handlePointerDownDrag = (e: React.PointerEvent, ann: TextAnnotation | SignatureAnnotation) => {
+  const handlePointerDownDrag = (e: React.PointerEvent, ann: TextAnnotation | SignatureAnnotation | ImageAnnotation) => {
     e.stopPropagation();
     onSelectAnnotation(ann.id);
     setDraggingId(ann.id);
@@ -387,7 +597,28 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
-  // Move handler for drag and both types of resize
+  // Start resizing image
+  const handlePointerDownImageResize = (
+    e: React.PointerEvent,
+    ann: ImageAnnotation,
+    resizeType: 'corner' | 'right' | 'bottom'
+  ) => {
+    e.stopPropagation();
+    onSelectAnnotation(ann.id);
+    setResizingImage({
+      id: ann.id,
+      type: resizeType,
+      startX: e.clientX,
+      startY: e.clientY,
+      initialW: ann.width,
+      initialH: ann.height,
+      aspectRatio: ann.aspectRatio || ann.width / ann.height,
+      lockAspectRatio: ann.lockAspectRatio !== false,
+    });
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  // Move handler for drag and all types of resize
   const handlePointerMove = (e: React.PointerEvent) => {
     if (draggingId && dragStartPos) {
       e.preventDefault();
@@ -397,14 +628,17 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       const ann = annotations.find((a) => a.id === draggingId);
       if (!ann || ann.type === 'drawing') return;
 
-      const newX = Math.max(0.01, Math.min(0.95, dragStartPos.initialAnnX + deltaX));
-      const newY = Math.max(0.01, Math.min(0.95, dragStartPos.initialAnnY + deltaY));
+      const annWidth = (ann as any).width || 0.2;
+      const annHeight = (ann as any).height || 0.05;
+
+      const newX = Math.max(0.01, Math.min(0.99 - annWidth, dragStartPos.initialAnnX + deltaX));
+      const newY = Math.max(0.01, Math.min(0.99 - annHeight, dragStartPos.initialAnnY + deltaY));
 
       onUpdateAnnotation({
         ...ann,
         x: newX,
         y: newY,
-      } as TextAnnotation | SignatureAnnotation);
+      } as any);
     } else if (resizingTextId && resizeTextStartPos) {
       e.preventDefault();
       const deltaX = (e.clientX - resizeTextStartPos.x) / pageWidth;
@@ -425,8 +659,47 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       const ann = annotations.find((a) => a.id === resizingSigId) as SignatureAnnotation | undefined;
       if (!ann || ann.type !== 'signature') return;
 
-      const newW = Math.max(0.05, Math.min(0.9, resizeSigStartPos.initialW + deltaX));
-      const newH = Math.max(0.02, Math.min(0.5, resizeSigStartPos.initialH + deltaY));
+      const newW = Math.max(0.05, Math.min(0.95 - ann.x, resizeSigStartPos.initialW + deltaX));
+      const newH = Math.max(0.02, Math.min(0.95 - ann.y, resizeSigStartPos.initialH + deltaY));
+
+      onUpdateAnnotation({
+        ...ann,
+        width: newW,
+        height: newH,
+      });
+    } else if (resizingImage) {
+      e.preventDefault();
+      const deltaX = (e.clientX - resizingImage.startX) / pageWidth;
+      const deltaY = (e.clientY - resizingImage.startY) / pageHeight;
+
+      const ann = annotations.find((a) => a.id === resizingImage.id) as ImageAnnotation | undefined;
+      if (!ann || ann.type !== 'image') return;
+
+      let newW = ann.width;
+      let newH = ann.height;
+
+      if (resizingImage.type === 'corner') {
+        newW = Math.max(0.04, Math.min(0.96 - ann.x, resizingImage.initialW + deltaX));
+        if (resizingImage.lockAspectRatio) {
+          newH = (newW * (pageWidth / pageHeight)) / resizingImage.aspectRatio;
+          if (newH > 0.96 - ann.y) {
+            newH = 0.96 - ann.y;
+            newW = newH * (pageHeight / pageWidth) * resizingImage.aspectRatio;
+          }
+        } else {
+          newH = Math.max(0.02, Math.min(0.96 - ann.y, resizingImage.initialH + deltaY));
+        }
+      } else if (resizingImage.type === 'right') {
+        newW = Math.max(0.04, Math.min(0.96 - ann.x, resizingImage.initialW + deltaX));
+        if (resizingImage.lockAspectRatio) {
+          newH = (newW * (pageWidth / pageHeight)) / resizingImage.aspectRatio;
+        }
+      } else if (resizingImage.type === 'bottom') {
+        newH = Math.max(0.02, Math.min(0.96 - ann.y, resizingImage.initialH + deltaY));
+        if (resizingImage.lockAspectRatio) {
+          newW = newH * (pageHeight / pageWidth) * resizingImage.aspectRatio;
+        }
+      }
 
       onUpdateAnnotation({
         ...ann,
@@ -458,6 +731,12 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       setResizingSigId(null);
       setResizeSigStartPos(null);
     }
+    if (resizingImage) {
+      try {
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch (_) {}
+      setResizingImage(null);
+    }
   };
 
   return (
@@ -484,6 +763,26 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
               onDuplicate={() => onDuplicateAnnotation && onDuplicateAnnotation(ann as TextAnnotation)}
               onStartDrag={(e) => handlePointerDownDrag(e, ann as TextAnnotation)}
               onStartResize={(e) => handlePointerDownTextResize(e, ann as TextAnnotation)}
+            />
+          );
+        }
+
+        if (ann.type === 'image') {
+          return (
+            <ImageAnnotationItem
+              key={ann.id}
+              imgAnn={ann as ImageAnnotation}
+              pageWidth={pageWidth}
+              pageHeight={pageHeight}
+              isSelected={isSelected}
+              onSelect={() => onSelectAnnotation(ann.id)}
+              onUpdate={(updated) => onUpdateAnnotation(updated)}
+              onDelete={() => onDeleteAnnotation(ann.id)}
+              onDuplicate={() => onDuplicateAnnotation && onDuplicateAnnotation(ann as ImageAnnotation)}
+              onStartDrag={(e) => handlePointerDownDrag(e, ann as ImageAnnotation)}
+              onStartCornerResize={(e) => handlePointerDownImageResize(e, ann as ImageAnnotation, 'corner')}
+              onStartRightResize={(e) => handlePointerDownImageResize(e, ann as ImageAnnotation, 'right')}
+              onStartBottomResize={(e) => handlePointerDownImageResize(e, ann as ImageAnnotation, 'bottom')}
             />
           );
         }

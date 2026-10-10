@@ -160,7 +160,7 @@ export async function applyAnnotationsToPdf(
       } catch (err) {
         console.error('Fehler beim Zeichnen des Texts:', err);
       }
-    } else if (ann.type === 'signature') {
+    } else if (ann.type === 'signature' || ann.type === 'image') {
       try {
         const imageBytes = await fetch(ann.dataUrl).then((res) => res.arrayBuffer());
         let embeddedImage;
@@ -170,24 +170,72 @@ export async function applyAnnotationsToPdf(
           embeddedImage = await pdfDoc.embedPng(imageBytes);
         }
 
-        const sigWidth = ann.width * pageWidth;
-        const sigHeight = ann.height * pageHeight;
+        const imgWidth = ann.width * pageWidth;
+        const imgHeight = ann.height * pageHeight;
         const pdfX = ann.x * pageWidth;
         const pdfY = pageHeight - ((ann.y + ann.height) * pageHeight);
 
         page.drawImage(embeddedImage, {
           x: Math.max(0, pdfX),
           y: Math.max(0, pdfY),
-          width: sigWidth,
-          height: sigHeight,
+          width: imgWidth,
+          height: imgHeight,
         });
       } catch (err) {
-        console.error('Fehler beim Einbetten der Signatur:', err);
+        console.error('Fehler beim Einbetten des Bildes/der Signatur:', err);
       }
     }
   }
 
   return await pdfDoc.save();
+}
+
+/**
+ * Converts any image file or blob (PNG, JPG, WebP, Screenshot) to a clean PNG data URL
+ * and calculates natural dimensions and aspect ratio.
+ */
+export async function processImageFile(
+  fileOrBlob: Blob
+): Promise<{ dataUrl: string; naturalWidth: number; naturalHeight: number; aspectRatio: number }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Canvas-Kontext konnte nicht erstellt werden'));
+            return;
+          }
+          ctx.drawImage(img, 0, 0);
+          const dataUrl = canvas.toDataURL('image/png');
+          const aspectRatio = img.naturalWidth / img.naturalHeight;
+          resolve({
+            dataUrl,
+            naturalWidth: img.naturalWidth,
+            naturalHeight: img.naturalHeight,
+            aspectRatio,
+          });
+        } catch (_) {
+          // Fallback to raw dataUrl if canvas fails
+          resolve({
+            dataUrl: e.target?.result as string,
+            naturalWidth: img.naturalWidth,
+            naturalHeight: img.naturalHeight,
+            aspectRatio: img.naturalWidth / img.naturalHeight,
+          });
+        }
+      };
+      img.onerror = () => reject(new Error('Bild konnte nicht dekodiert werden'));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error('Datei konnte nicht gelesen werden'));
+    reader.readAsDataURL(fileOrBlob);
+  });
 }
 
 /**
