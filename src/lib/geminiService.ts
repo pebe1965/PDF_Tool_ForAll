@@ -154,7 +154,52 @@ export async function callGeminiApi({
     throw new Error('Keine Antwort von Gemini erhalten.');
   }
 
-  return candidate.content.parts[0].text;
+  const rawText = candidate.content.parts[0].text;
+  return formatMarkdownToCleanText(rawText);
+}
+
+/**
+ * Strips all markdown syntax (#, **, *, `, $, LaTeX) and converts it into
+ * clean, print-ready, professional document typography with clean bullet points.
+ */
+export function formatMarkdownToCleanText(md: string): string {
+  if (!md) return '';
+
+  return md
+    // 1. Convert LaTeX math arrows and formulas
+    .replace(/\\rightarrow|\$\s*\\rightarrow\s*\$/g, '->')
+    .replace(/\\leftarrow|\$\s*\\leftarrow\s*\$/g, '<-')
+    .replace(/\$([^\$]+)\$/g, '$1')
+
+    // 2. Remove code fences and inline backticks
+    .replace(/```[a-z]*\n([\s\S]*?)```/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+
+    // 3. Remove horizontal dividers
+    .replace(/^---+$/gm, '')
+
+    // 4. Clean bold and italic markers
+    .replace(/\*\*\*([^\*]+)\*\*\*/g, '$1')
+    .replace(/\*\*([^\*]+)\*\*/g, '$1')
+    .replace(/\*([^\*]+)\*/g, '$1')
+    .replace(/___([^_]+)___/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+
+    // 5. Convert markdown headings (#, ##, ###) into clean readable headings
+    .replace(/^###+\s+(.+)$/gm, '$1:')
+    .replace(/^##\s+(.+)$/gm, '$1:')
+    .replace(/^#\s+(.+)$/gm, '$1')
+
+    // 6. Convert bullet lists (* or -) to clean bullets (•)
+    .replace(/^(\s*)[*+-]\s+/gm, '$1• ')
+
+    // 7. Clean links [label](url) -> label (url)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)')
+
+    // 8. Clean up multiple empty lines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /**
@@ -175,15 +220,15 @@ export async function summarizeDocument(
       'Erstelle eine ausführliche, strukturierte Zusammenfassung mit Abschnitten, Kontext und Schlussfolgerungen.';
   } else {
     stylePrompt =
-      'Erstelle eine übersichtliche Aufzählung mit: 1. Kernaussagen (Bulletpoints), 2. Wichtige Fristen/Aufgaben/Action Items, 3. Beteiligte Personen/Parteien.';
+      'Erstelle eine übersichtliche Aufzählung mit: 1. Kernaussagen (Aufzählungspunkte), 2. Wichtige Fristen/Aufgaben/Action Items, 3. Beteiligte Personen/Parteien.';
   }
 
-  const prompt = `${stylePrompt}\nBitte antworte auf Deutsch in klar formatiertem Markdown.`;
+  const prompt = `${stylePrompt}\nAntworte auf Deutsch in sauberem, druckreifem Plain-Text OHNE Markdown-Sonderzeichen (KEINE Hashes #, KEINE Sternchen **, KEINE Backticks, KEINE LaTeX-Codes). Verwende für Aufzählungen einfache Spiegelstriche (-) oder Punkte (•). Überschriften als eigenständige Zeile hervorheben.`;
 
   return callGeminiApi({
     prompt,
     systemInstruction:
-      'Du bist ein professioneller Dokumenten-Assistent. Analysiere das Dokument präzise und objektiv.',
+      'Du bist ein professioneller Dokumenten-Assistent. Analysiere das Dokument präzise und objektiv. Formatiere deine Antworten stets in sauberem, druckreifem Plain-Text ohne Markdown-Syntax, sodass der Text direkt in PDF-Dokumente eingefügt werden kann.',
     pdfBytes,
     extractedText: fullText,
   });

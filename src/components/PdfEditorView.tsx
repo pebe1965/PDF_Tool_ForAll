@@ -22,6 +22,7 @@ import { pdfjsLib } from '../lib/pdfWorker';
 import { AnnotationLayer } from './AnnotationLayer';
 import { SignatureModal } from './SignatureModal';
 import { GeminiAiModal } from './GeminiAiModal';
+import { formatMarkdownToCleanText } from '../lib/geminiService';
 import { Annotation, TextAnnotation, SignatureAnnotation, ImageAnnotation } from '../types/pdf';
 import {
   applyAnnotationsToPdf,
@@ -410,15 +411,24 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
   // Insert AI generated text into current page
   const handleInsertTextFromAi = (text: string) => {
+    const cleanText = formatMarkdownToCleanText(text);
+    const charCount = cleanText.length;
+    let initialFontSize = 13;
+    if (charCount > 1000) {
+      initialFontSize = 10;
+    } else if (charCount > 400) {
+      initialFontSize = 11;
+    }
+
     const newTextAnn: TextAnnotation = {
       id: `text_${Date.now()}`,
       type: 'text',
       pageNumber: currentPage,
-      x: 0.1,
-      y: 0.15,
-      width: 0.78,
-      text: text,
-      fontSize: 13,
+      x: 0.08,
+      y: 0.1,
+      width: 0.84,
+      text: cleanText,
+      fontSize: initialFontSize,
       color: '#000000',
       backgroundColor: '#FFFFFF',
     };
@@ -432,9 +442,18 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   const handleInsertAsNewPageFromAi = async (text: string) => {
     if (!pdfBytes) return;
     try {
+      const cleanText = formatMarkdownToCleanText(text);
       const updatedBytes = await addBlankPageToPdf(pdfBytes);
       const newPageNum = numPages + 1;
       await reloadPdfFromBuffer(updatedBytes, newPageNum);
+
+      const charCount = cleanText.length;
+      let initialFontSize = 12;
+      if (charCount > 1200) {
+        initialFontSize = 10;
+      } else if (charCount > 500) {
+        initialFontSize = 11;
+      }
 
       const newTextAnn: TextAnnotation = {
         id: `text_${Date.now()}`,
@@ -443,8 +462,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         x: 0.08,
         y: 0.08,
         width: 0.84,
-        text: text,
-        fontSize: 13,
+        text: cleanText,
+        fontSize: initialFontSize,
         color: '#000000',
         backgroundColor: 'transparent',
       };
