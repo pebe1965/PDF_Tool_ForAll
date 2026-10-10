@@ -1,0 +1,14 @@
+# Dependencies & Portable toolchain
+node_modules/
+.tools/
+
+# Build Staging & Logs
+.dmg_staging/
+.win_staging/
+*.log
+.DS_Store
+
+# Generated Release Packages (uploaded to GitHub Releases)
+PDF_Tool_ForAll.app
+PDF_Tool_ForAll.dmg
+PDF_Tool_ForAll_Windows.zip
