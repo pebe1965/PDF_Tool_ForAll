@@ -7,6 +7,9 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true, // Allows accessing from iPad on local network!
+    watch: {
+      ignored: ['**/PDF_Tool_ForAll.app/**', '**/dist/**', '**/*.dmg', '**/*.zip', '**/.git/**']
+    }
   },
   optimizeDeps: {
     include: ['pdfjs-dist', 'pdf-lib']

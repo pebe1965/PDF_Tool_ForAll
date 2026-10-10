@@ -91,7 +91,7 @@ cp "$PROJECT_DIR/server.py" "$APP_BUNDLE/Contents/Resources/app/"
 
 # 3. macOS .dmg erstellen
 echo "💿 3. Erstelle macOS Disk Image (PDF_Tool_ForAll.dmg)..."
-DMG_STAGING="$PROJECT_DIR/.dmg_staging"
+DMG_STAGING="/tmp/dmg_staging_pdftool_$$"
 rm -rf "$DMG_STAGING" "$PROJECT_DIR/PDF_Tool_ForAll.dmg"
 mkdir -p "$DMG_STAGING"
 
@@ -103,7 +103,7 @@ rm -rf "$DMG_STAGING"
 
 # 4. Windows .zip Release-Paket erstellen
 echo "🪟 4. Erstelle Windows Release-Paket (PDF_Tool_ForAll_Windows.zip)..."
-WIN_STAGING="$PROJECT_DIR/.win_staging"
+WIN_STAGING="/tmp/win_staging_pdftool_$$"
 rm -rf "$WIN_STAGING" "$PROJECT_DIR/PDF_Tool_ForAll_Windows.zip"
 mkdir -p "$WIN_STAGING"
 
