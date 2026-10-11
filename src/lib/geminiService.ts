@@ -1,5 +1,7 @@
-import { getActiveGeminiApiKey, DEFAULT_GEMINI_MODEL } from '../config';
+import { getKiVerbindung, DEFAULT_GEMINI_MODEL, APP_KI_URL, MAX_PDF_BYTES_UEBER_APP } from '../config';
 import { pdfjsLib } from './pdfWorker';
+import { Annotation, TextAnnotation } from '../types/pdf';
+import { extractSinglePageAsPdf } from './pdfEngine';
 
 export interface ChatMessage {
   id: string;
@@ -10,10 +12,12 @@ export interface ChatMessage {
 
 /**
  * Extracts plain text from a PDF buffer using Mozilla PDF.js
+ * Combines underlying PDF text with any active text annotations on those pages.
  */
 export async function extractTextFromPdf(
   pdfBytes: ArrayBuffer,
-  pageNumber?: number // 1-indexed; if undefined, extracts all pages
+  pageNumber?: number, // 1-indexed; if undefined, extracts all pages
+  annotations?: Annotation[]
 ): Promise<{ fullText: string; pageTexts: { page: number; text: string }[]; totalLength: number }> {
   try {
     const loadingTask = pdfjsLib.getDocument({ data: pdfBytes.slice(0) });
@@ -24,18 +28,41 @@ export async function extractTextFromPdf(
     const end = pageNumber && pageNumber > 0 && pageNumber <= pdfDoc.numPages ? pageNumber : pdfDoc.numPages;
 
     for (let p = start; p <= end; p++) {
-      const page = await pdfDoc.getPage(p);
-      const content = await page.getTextContent();
-      const pageStr = content.items
-        .map((item: any) => ('str' in item ? item.str : ''))
-        .join(' ')
-        .replace(/\s+/g, ' ');
-      pageTexts.push({ page: p, text: pageStr.trim() });
+      let pageStr = '';
+      try {
+        const page = await pdfDoc.getPage(p);
+        const content = await page.getTextContent();
+        pageStr = content.items
+          .map((item: any) => ('str' in item ? item.str : ''))
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .replace(/[ \t]{2,}[iIℹ][ \t]*$/gm, '')
+          .replace(/[:.,;][ \t]+[iIℹ][ \t]*$/gm, (m: string) => m[0])
+          .replace(/^[ \t]*[iIℹ][ \t]*$/gm, '')
+          .replace(/^[ \t]*[•\-\*]\s+[iIℹ]\s*$/gm, '')
+          .replace(/[ \t]{2,}[iIℹ][ \t]{2,}/g, ' ')
+          .trim();
+      } catch (err) {
+        console.warn(`Konnte Seite ${p} nicht auslesen:`, err);
+      }
+
+      // Also gather any text annotations placed on page p
+      const annTexts = annotations
+        ? annotations
+            .filter((a) => a.pageNumber === p && a.type === 'text' && (a as TextAnnotation).text)
+            .map((a) => (a as TextAnnotation).text.trim())
+            .filter(Boolean)
+        : [];
+
+      // Combine underlying PDF text with annotations on that page
+      const combined = [pageStr, ...annTexts].filter(Boolean).join('\n\n').trim();
+      pageTexts.push({ page: p, text: combined });
     }
 
     const fullText = pageTexts
-      .map((pt) => `[Seite ${pt.page}]:\n${pt.text}`)
-      .join('\n\n');
+      .map((pt) => (pageNumber ? pt.text : `[Seite ${pt.page}]:\n${pt.text}`))
+      .join('\n\n')
+      .trim();
 
     return {
       fullText,
@@ -77,15 +104,24 @@ export async function callGeminiApi({
   extractedText?: string;
   model?: string;
 }): Promise<string> {
-  const apiKey = getActiveGeminiApiKey();
+  const verbindung = getKiVerbindung();
 
-  if (!apiKey) {
+  if (!verbindung) {
     throw new Error(
-      'Kein Gemini API-Schlüssel hinterlegt. Bitte hinterlege deinen Google Gemini API-Schlüssel in der Konfiguration.'
+      'Die KI ist noch nicht eingerichtet. Erstelle im Marketplace von NotionaryAtlas einen Zugangscode und füge ihn unter Einstellungen → KI ein.'
     );
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  // Über die App: gleiche Anfrage, aber an NotionaryAtlas mit dem Zugangscode.
+  // Modell und Schlüssel bestimmt dort die App.
+  const ueberApp = verbindung.art === 'app';
+  const endpoint = ueberApp
+    ? APP_KI_URL
+    : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const authHeaders: Record<string, string> = ueberApp
+    ? { Authorization: `Bearer ${verbindung.zugangscode}` }
+    : { 'x-goog-api-key': verbindung.schluessel };
+  const maxPdfBytes = ueberApp ? MAX_PDF_BYTES_UEBER_APP : 18 * 1024 * 1024;
 
   const parts: any[] = [];
 
@@ -94,7 +130,11 @@ export async function callGeminiApi({
     parts.push({
       text: `DOKUMENTEN-INHALT:\n"""\n${extractedText}\n"""\n\nAUFGABE/FRAGE:\n${prompt}`,
     });
-  } else if (pdfBytes && pdfBytes.byteLength > 0 && pdfBytes.byteLength < 18 * 1024 * 1024) {
+  } else if (pdfBytes && pdfBytes.byteLength > maxPdfBytes && !(extractedText && extractedText.trim())) {
+    throw new Error(
+      'Dieses PDF enthält keinen auslesbaren Text und ist für die Bildanalyse über die App zu groß (höchstens 2,8 MB). Teile es in kleinere Dateien auf.'
+    );
+  } else if (pdfBytes && pdfBytes.byteLength > 0 && pdfBytes.byteLength <= maxPdfBytes) {
     // Multimodal Fallback: send visual PDF as inlineData if text extraction was empty (scanned doc)
     const base64Pdf = arrayBufferToBase64(pdfBytes);
     parts.push({
@@ -134,6 +174,7 @@ export async function callGeminiApi({
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders,
     },
     body: JSON.stringify(requestBody),
   });
@@ -141,7 +182,13 @@ export async function callGeminiApi({
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     const message = errorData?.error?.message || `HTTP ${response.status} ${response.statusText}`;
-    throw new Error(`Gemini API-Fehler: ${message}`);
+    if (ueberApp && (response.status === 401 || response.status === 403)) {
+      throw new Error(`${message} — Zugangscode unter Einstellungen → KI prüfen.`);
+    }
+    if (ueberApp && response.status === 402) {
+      throw new Error(`${message}. KI-Credits gibt es in NotionaryAtlas unter Einstellungen.`);
+    }
+    throw new Error(ueberApp ? message : `Gemini API-Fehler: ${message}`);
   }
 
   const data = await response.json();
@@ -178,26 +225,34 @@ export function formatMarkdownToCleanText(md: string): string {
     // 3. Remove horizontal dividers
     .replace(/^---+$/gm, '')
 
-    // 4. Clean bold and italic markers
-    .replace(/\*\*\*([^\*]+)\*\*\*/g, '$1')
-    .replace(/\*\*([^\*]+)\*\*/g, '$1')
-    .replace(/\*([^\*]+)\*/g, '$1')
-    .replace(/___([^_]+)___/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    .replace(/_([^_]+)_/g, '$1')
+    // 4. Convert bullet lists (*, -, +) to clean bullets (•) FIRST
+    // (Crucial: must happen before single-asterisk italic stripping so bullets are preserved!)
+    .replace(/^(\s*)[*+-]\s+/gm, '$1• ')
 
-    // 5. Convert markdown headings (#, ##, ###) into clean readable headings
+    // 5. Clean bold and italic markers (line-bound so asterisks across lines do not eat text)
+    .replace(/\*\*\*([^\*\n]+)\*\*\*/g, '$1')
+    .replace(/\*\*([^\*\n]+)\*\*/g, '$1')
+    .replace(/\*([^\*\n]+)\*/g, '$1')
+    .replace(/___([^_\n]+)___/g, '$1')
+    .replace(/__([^_\n]+)__/g, '$1')
+    .replace(/_([^_\n]+)_/g, '$1')
+
+    // 6. Convert markdown headings (#, ##, ###) into clean readable headings
     .replace(/^###+\s+(.+)$/gm, '$1:')
     .replace(/^##\s+(.+)$/gm, '$1:')
     .replace(/^#\s+(.+)$/gm, '$1')
 
-    // 6. Convert bullet lists (* or -) to clean bullets (•)
-    .replace(/^(\s*)[*+-]\s+/gm, '$1• ')
-
     // 7. Clean links [label](url) -> label (url)
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)')
 
-    // 8. Clean up multiple empty lines
+    // 8. Clean isolated info-icon / pictogram glyph artifacts (e.g. trailing "   i" or isolated "i" / "ℹ")
+    .replace(/[ \t]{2,}[iIℹ][ \t]*$/gm, '')
+    .replace(/[:.,;][ \t]+[iIℹ][ \t]*$/gm, (m) => m[0])
+    .replace(/^[ \t]*[iIℹ][ \t]*$/gm, '')
+    .replace(/^[ \t]*[•\-\*]\s+[iIℹ]\s*$/gm, '')
+    .replace(/[ \t]{2,}[iIℹ][ \t]{2,}/g, ' ')
+
+    // 9. Clean up multiple empty lines
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -208,9 +263,10 @@ export function formatMarkdownToCleanText(md: string): string {
 export async function summarizeDocument(
   pdfBytes: ArrayBuffer,
   pageNumber?: number,
-  style: 'bullet' | 'short' | 'detailed' = 'bullet'
+  style: 'bullet' | 'short' | 'detailed' = 'bullet',
+  annotations?: Annotation[]
 ): Promise<string> {
-  const { fullText } = await extractTextFromPdf(pdfBytes, pageNumber);
+  const { fullText } = await extractTextFromPdf(pdfBytes, pageNumber, annotations);
 
   let stylePrompt = '';
   if (style === 'short') {
@@ -223,13 +279,27 @@ export async function summarizeDocument(
       'Erstelle eine übersichtliche Aufzählung mit: 1. Kernaussagen (Aufzählungspunkte), 2. Wichtige Fristen/Aufgaben/Action Items, 3. Beteiligte Personen/Parteien.';
   }
 
-  const prompt = `${stylePrompt}\nAntworte auf Deutsch in sauberem, druckreifem Plain-Text OHNE Markdown-Sonderzeichen (KEINE Hashes #, KEINE Sternchen **, KEINE Backticks, KEINE LaTeX-Codes). Verwende für Aufzählungen einfache Spiegelstriche (-) oder Punkte (•). Überschriften als eigenständige Zeile hervorheben.`;
+  const scopePrompt = pageNumber
+    ? `Analysiere und fasse ausschließlich den Inhalt von Seite ${pageNumber} des Dokuments zusammen. Fasse keine anderen Seiten zusammen.`
+    : `Analysiere und fasse das gesamte Dokument zusammen.`;
+
+  const prompt = `${scopePrompt}\n${stylePrompt}\nAntworte auf Deutsch in sauberem, druckreifem Plain-Text OHNE Markdown-Sonderzeichen (KEINE Hashes #, KEINE Sternchen **, KEINE Backticks, KEINE LaTeX-Codes). Verwende für Aufzählungen einfache Spiegelstriche (-) oder Punkte (•). Überschriften als eigenständige Zeile hervorheben.`;
+
+  let effectivePdfBytes = pdfBytes;
+  if (pageNumber) {
+    try {
+      const singlePageBytes = await extractSinglePageAsPdf(pdfBytes, pageNumber);
+      effectivePdfBytes = singlePageBytes.buffer as ArrayBuffer;
+    } catch (_) {
+      effectivePdfBytes = pdfBytes;
+    }
+  }
 
   return callGeminiApi({
     prompt,
     systemInstruction:
       'Du bist ein professioneller Dokumenten-Assistent. Analysiere das Dokument präzise und objektiv. Formatiere deine Antworten stets in sauberem, druckreifem Plain-Text ohne Markdown-Syntax, sodass der Text direkt in PDF-Dokumente eingefügt werden kann.',
-    pdfBytes,
+    pdfBytes: effectivePdfBytes,
     extractedText: fullText,
   });
 }
@@ -239,11 +309,16 @@ export async function summarizeDocument(
  */
 export async function checkGrammarAndSpelling(
   pdfBytes: ArrayBuffer,
-  pageNumber?: number
+  pageNumber?: number,
+  annotations?: Annotation[]
 ): Promise<string> {
-  const { fullText } = await extractTextFromPdf(pdfBytes, pageNumber);
+  const { fullText } = await extractTextFromPdf(pdfBytes, pageNumber, annotations);
 
-  const prompt = `Analysiere den Text des Dokuments sorgfältig auf:
+  const scopePrompt = pageNumber
+    ? `Analysiere ausschließlich den Text von Seite ${pageNumber} des Dokuments sorgfältig auf:`
+    : `Analysiere den Text des Dokuments sorgfältig auf:`;
+
+  const prompt = `${scopePrompt}
 1. Rechtschreibfehler (Orthografie)
 2. Grammatik- und Zeichensetzungsfehler (Kommasetzung)
 3. Unklare oder holprige Formulierungen
@@ -253,11 +328,21 @@ Gib die Antwort so aus:
 - **Vollständiger korrigierter Text**: Der gesamte Text in fehlerfreier, stilistisch runder Fassung.
 Falls der Text bereits fehlerfrei ist, bestätige dies lobend.`;
 
+  let effectivePdfBytes = pdfBytes;
+  if (pageNumber) {
+    try {
+      const singlePageBytes = await extractSinglePageAsPdf(pdfBytes, pageNumber);
+      effectivePdfBytes = singlePageBytes.buffer as ArrayBuffer;
+    } catch (_) {
+      effectivePdfBytes = pdfBytes;
+    }
+  }
+
   return callGeminiApi({
     prompt,
     systemInstruction:
       'Du bist ein professioneller Lektor und Experte für deutsche Rechtschreibung nach Duden.',
-    pdfBytes,
+    pdfBytes: effectivePdfBytes,
     extractedText: fullText,
   });
 }
@@ -268,19 +353,35 @@ Falls der Text bereits fehlerfrei ist, bestätige dies lobend.`;
 export async function translateDocument(
   pdfBytes: ArrayBuffer,
   targetLanguage: string = 'Englisch',
-  pageNumber?: number
+  pageNumber?: number,
+  annotations?: Annotation[]
 ): Promise<string> {
-  const { fullText } = await extractTextFromPdf(pdfBytes, pageNumber);
+  const { fullText } = await extractTextFromPdf(pdfBytes, pageNumber, annotations);
 
-  const prompt = `Übersetze den Inhalt des Dokuments vollständig und professionell ins ${targetLanguage}.
+  const scopeInstruction = pageNumber
+    ? `Übersetze ausschließlich den folgenden Inhalt von Seite ${pageNumber} des Dokuments vollständig und professionell ins ${targetLanguage}. Übersetze keine anderen Seiten.`
+    : `Übersetze den Inhalt des Dokuments vollständig und professionell ins ${targetLanguage}.`;
+
+  const prompt = `${scopeInstruction}
 Behalte Absätze, Aufzählungen und die formale Tonalität exakt bei.
+Entferne isolierte Piktogramm-Buchstaben oder Info-Icons (wie alleinstehende 'i'-Symbole oder 'ℹ' am Zeilenende oder in Aufzählungen).
 Gib ausschließlich die Übersetzung ohne Begrüßungsfloskeln aus.`;
+
+  let effectivePdfBytes = pdfBytes;
+  if (pageNumber) {
+    try {
+      const singlePageBytes = await extractSinglePageAsPdf(pdfBytes, pageNumber);
+      effectivePdfBytes = singlePageBytes.buffer as ArrayBuffer;
+    } catch (_) {
+      effectivePdfBytes = pdfBytes;
+    }
+  }
 
   return callGeminiApi({
     prompt,
     systemInstruction:
       'Du bist ein erfahrener Fachübersetzer. Übersetze präzise unter Beibehaltung von Fachbegriffen und Sinn.',
-    pdfBytes,
+    pdfBytes: effectivePdfBytes,
     extractedText: fullText,
   });
 }
@@ -341,20 +442,35 @@ Formatierung:
 export async function askDocumentQuestion(
   pdfBytes: ArrayBuffer,
   question: string,
-  pageNumber?: number
+  pageNumber?: number,
+  annotations?: Annotation[]
 ): Promise<string> {
-  const { fullText } = await extractTextFromPdf(pdfBytes, pageNumber);
+  const { fullText } = await extractTextFromPdf(pdfBytes, pageNumber, annotations);
 
-  const prompt = `Beantworte folgende Frage basierend auf dem Dokument präzise und fundiert:
+  const scopePrompt = pageNumber
+    ? `Beantworte folgende Frage ausschließlich basierend auf Seite ${pageNumber} des Dokuments:`
+    : `Beantworte folgende Frage basierend auf dem Dokument präzise und fundiert:`;
+
+  const prompt = `${scopePrompt}
 "${question}"
 
 Wenn die Information im Dokument vorhanden ist, nenne wenn möglich auch den Kontext bzw. die Seitenzahl.`;
+
+  let effectivePdfBytes = pdfBytes;
+  if (pageNumber) {
+    try {
+      const singlePageBytes = await extractSinglePageAsPdf(pdfBytes, pageNumber);
+      effectivePdfBytes = singlePageBytes.buffer as ArrayBuffer;
+    } catch (_) {
+      effectivePdfBytes = pdfBytes;
+    }
+  }
 
   return callGeminiApi({
     prompt,
     systemInstruction:
       'Du bist ein aufmerksamer Assistent. Beantworte Fragen wahrheitsgemäß auf Basis des Dokuments.',
-    pdfBytes,
+    pdfBytes: effectivePdfBytes,
     extractedText: fullText,
   });
 }

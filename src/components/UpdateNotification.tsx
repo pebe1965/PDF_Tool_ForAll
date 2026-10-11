@@ -1,106 +1,62 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, Download, ExternalLink, X, ArrowUpCircle } from 'lucide-react';
-import { APP_VERSION, GITHUB_REPO } from '../config';
+import { APP_VERSION } from '../config';
+import { checkForGitHubUpdate, UpdateInfo } from '../lib/updateService';
 
-interface UpdateInfo {
-  updateAvailable: boolean;
-  latestVersion: string;
-  releaseName: string;
-  releaseNotes: string;
-  dmgUrl: string;
-  zipUrl: string;
-  htmlUrl: string;
+interface UpdateNotificationProps {
+  onOpenSettingsUpdates?: () => void;
 }
 
-export const UpdateNotification: React.FC = () => {
+export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onOpenSettingsUpdates }) => {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
-    // Check GitHub releases for updates
-    const checkForUpdates = async () => {
+    // Only check if auto-check is not explicitly disabled
+    if (localStorage.getItem('auto_check_updates') === 'false') {
+      return;
+    }
+
+    const check = async () => {
       try {
-        const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
-          headers: {
-            Accept: 'application/vnd.github.v3+json',
-          },
-        });
-
-        if (!response.ok) return;
-
-        const rel = await response.json();
-        const tag = (rel.tag_name || '').replace(/^v/, '');
-
-        // Compare version strings: e.g. "1.1.0" > "1.0.0"
-        const vparts = (vStr: string) => {
-          const parts = vStr.match(/\d+/g);
-          return parts ? parts.map(Number) : [0];
-        };
-
-        const latestParts = vparts(tag);
-        const currentParts = vparts(APP_VERSION);
-
-        let isNewer = false;
-        for (let i = 0; i < Math.max(latestParts.length, currentParts.length); i++) {
-          const l = latestParts[i] || 0;
-          const c = currentParts[i] || 0;
-          if (l > c) {
-            isNewer = true;
-            break;
-          }
-          if (l < c) {
-            break;
-          }
+        const info = await checkForGitHubUpdate();
+        if (info.updateAvailable) {
+          setUpdateInfo(info);
         }
-
-        let dmgUrl = '';
-        let zipUrl = '';
-
-        if (Array.isArray(rel.assets)) {
-          for (const asset of rel.assets) {
-            const name = (asset.name || '').toLowerCase();
-            if (name.endsWith('.dmg')) dmgUrl = asset.browser_download_url;
-            if (name.endsWith('.zip')) zipUrl = asset.browser_download_url;
-          }
-        }
-
-        if (isNewer) {
-          setUpdateInfo({
-            updateAvailable: true,
-            latestVersion: tag,
-            releaseName: rel.name || `Version ${tag}`,
-            releaseNotes: rel.body || '',
-            dmgUrl,
-            zipUrl,
-            htmlUrl: rel.html_url || `https://github.com/${GITHUB_REPO}/releases`,
-          });
-        }
-      } catch (err) {
-        // Silently ignore network failures (e.g. offline mode)
+      } catch (_) {
+        // Silently ignore network errors
       }
     };
 
-    checkForUpdates();
+    check();
   }, []);
 
   if (!updateInfo || !updateInfo.updateAvailable) {
     return null;
   }
 
+  const handleBadgeClick = () => {
+    if (onOpenSettingsUpdates) {
+      onOpenSettingsUpdates();
+    } else {
+      setIsModalOpen(true);
+    }
+  };
+
   return (
     <>
       {/* Pulsing Header Badge */}
       <button
-        onClick={() => setIsModalOpen(true)}
+        onClick={handleBadgeClick}
         className="px-2.5 py-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer transition flex items-center gap-1.5 shadow-sm animate-pulse"
-        title="Ein neues Update ist auf GitHub verfügbar!"
+        title="Ein neues Update ist auf GitHub verfügbar! Klicken für Details."
       >
         <Sparkles size={13} />
         <span>Update v{updateInfo.latestVersion}</span>
       </button>
 
-      {/* Update Info Modal */}
-      {isModalOpen && (
+      {/* Fallback Update Info Modal if no onOpenSettingsUpdates was provided */}
+      {isModalOpen && !onOpenSettingsUpdates && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-[#D2D2D7]/60 flex flex-col">
             {/* Header */}
@@ -114,7 +70,10 @@ export const UpdateNotification: React.FC = () => {
                     Neues Update verfügbar!
                   </h2>
                   <p className="text-xs text-[#86868B]">
-                    Aktuell: <span className="font-mono font-medium">v{APP_VERSION}</span> ➔ Neu: <span className="font-mono font-bold text-emerald-600">v{updateInfo.latestVersion}</span>
+                    Aktuell: <span className="font-mono font-medium">v{APP_VERSION}</span> ➔ Neu:{' '}
+                    <span className="font-mono font-bold text-emerald-600">
+                      v{updateInfo.latestVersion}
+                    </span>
                   </p>
                 </div>
               </div>

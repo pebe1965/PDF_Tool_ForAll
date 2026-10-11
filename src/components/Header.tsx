@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileEdit, FileStack, ShieldCheck, Laptop, Tablet, Sparkles } from 'lucide-react';
+import { FileEdit, FileStack, ShieldCheck, Sparkles, Settings } from 'lucide-react';
 import { APP_VERSION } from '../config';
 import { UpdateNotification } from './UpdateNotification';
 
@@ -7,9 +7,15 @@ interface HeaderProps {
   activeTab: 'editor' | 'merge';
   onTabChange: (tab: 'editor' | 'merge') => void;
   onOpenAiAssistant?: () => void;
+  onOpenSettings?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, onOpenAiAssistant }) => {
+export const Header: React.FC<HeaderProps> = ({
+  activeTab,
+  onTabChange,
+  onOpenAiAssistant,
+  onOpenSettings,
+}) => {
   return (
     <header className="h-[68px] bg-white/80 backdrop-blur-md border-b border-[#D2D2D7]/60 px-6 flex items-center justify-between sticky top-0 z-30 select-none">
       {/* Brand Logo & Name */}
@@ -58,7 +64,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, onOpenAi
       </nav>
 
       {/* Right: Updates, AI Assistant, Security & Version indicator */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         {onOpenAiAssistant && (
           <button
             onClick={onOpenAiAssistant}
@@ -70,17 +76,39 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, onOpenAi
           </button>
         )}
 
-        {/* Dynamic Update Notification from GitHub */}
-        <UpdateNotification />
+        {/* Dynamic Update Notification from GitHub (Opens Settings Updates on click) */}
+        <UpdateNotification onOpenSettingsUpdates={onOpenSettings} />
+
+        {/* Settings & Updates button */}
+        {onOpenSettings && (
+          <button
+            onClick={onOpenSettings}
+            className="flex items-center gap-1.5 p-2 rounded-xl text-gray-600 hover:text-[#1D1D1F] hover:bg-gray-100 transition"
+            title="Einstellungen & nach Updates suchen"
+          >
+            <Settings size={18} />
+            <span className="hidden xl:inline text-xs font-semibold">Einstellungen</span>
+          </button>
+        )}
 
         <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-200">
           <ShieldCheck size={16} className="text-emerald-600" />
           <span>Lokal & Offline</span>
         </div>
 
-        <span className="hidden sm:inline text-[11px] font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">
-          v{APP_VERSION}
-        </span>
+        {onOpenSettings ? (
+          <button
+            onClick={onOpenSettings}
+            className="hidden sm:inline text-[11px] font-mono text-gray-500 bg-gray-100 hover:bg-gray-200 hover:text-black px-2 py-1 rounded-lg transition"
+            title="Version v1.0.0 (Klicken für Updates & Einstellungen)"
+          >
+            v{APP_VERSION}
+          </button>
+        ) : (
+          <span className="hidden sm:inline text-[11px] font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">
+            v{APP_VERSION}
+          </span>
+        )}
       </div>
     </header>
   );

@@ -16,6 +16,7 @@ import {
   Send,
   AlertCircle,
   Settings,
+  RefreshCw,
 } from 'lucide-react';
 import {
   summarizeDocument,
@@ -25,8 +26,11 @@ import {
   generateNewText,
   askDocumentQuestion,
   ChatMessage,
+  formatMarkdownToCleanText,
 } from '../lib/geminiService';
-import { getActiveGeminiApiKey } from '../config';
+import { paginateDocumentForA4 } from '../lib/a4Pagination';
+import { hasKiZugang, getZugangscode, setZugangscode, istZugangscode, pruefeZugangscode, getActiveGeminiApiKey, APP_MARKETPLACE_URL } from '../config';
+import { Annotation } from '../types/pdf';
 
 interface GeminiAiModalProps {
   isOpen: boolean;
@@ -34,8 +38,10 @@ interface GeminiAiModalProps {
   pdfBytes: ArrayBuffer | null;
   currentPage: number;
   numPages: number;
+  annotations?: Annotation[];
   onInsertTextIntoPage: (text: string) => void;
   onInsertAsNewPage?: (text: string) => void;
+  onReplaceCurrentPage?: (text: string) => void;
 }
 
 type TabType = 'summary' | 'grammar' | 'translate' | 'rewrite' | 'chat';
@@ -46,8 +52,10 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
   pdfBytes,
   currentPage,
   numPages,
+  annotations,
   onInsertTextIntoPage,
   onInsertAsNewPage,
+  onReplaceCurrentPage,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('summary');
   const [scope, setScope] = useState<'all' | 'current'>('all');
@@ -73,11 +81,13 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
 
   // Settings / Key config dialog
   const [showKeySettings, setShowKeySettings] = useState(false);
-  const [customKeyInput, setCustomKeyInput] = useState(localStorage.getItem('gemini_custom_api_key') || '');
-  const [hasApiKey, setHasApiKey] = useState(!!getActiveGeminiApiKey());
+  const [codeInput, setCodeInput] = useState(getZugangscode());
+  const [codeFehler, setCodeFehler] = useState<string | null>(null);
+  const [codePrueft, setCodePrueft] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(hasKiZugang());
 
   useEffect(() => {
-    setHasApiKey(!!getActiveGeminiApiKey());
+    setHasApiKey(hasKiZugang());
   }, [showKeySettings, isOpen]);
 
   if (!isOpen) return null;
@@ -94,7 +104,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
     setError(null);
     setResultText('');
     try {
-      const res = await summarizeDocument(pdfBytes, targetPageNum, summaryStyle);
+      const res = await summarizeDocument(pdfBytes, targetPageNum, summaryStyle, annotations);
       setResultText(res);
     } catch (err: any) {
       setError(err?.message || 'Fehler beim Erstellen der Zusammenfassung.');
@@ -113,7 +123,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
     setError(null);
     setResultText('');
     try {
-      const res = await checkGrammarAndSpelling(pdfBytes, targetPageNum);
+      const res = await checkGrammarAndSpelling(pdfBytes, targetPageNum, annotations);
       setResultText(res);
     } catch (err: any) {
       setError(err?.message || 'Fehler bei der Rechtschreibprüfung.');
@@ -132,7 +142,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
     setError(null);
     setResultText('');
     try {
-      const res = await translateDocument(pdfBytes, targetLang, targetPageNum);
+      const res = await translateDocument(pdfBytes, targetLang, targetPageNum, annotations);
       setResultText(res);
     } catch (err: any) {
       setError(err?.message || 'Fehler bei der Übersetzung.');
@@ -192,7 +202,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
     setLoading(true);
 
     try {
-      const answer = await askDocumentQuestion(pdfBytes, question, targetPageNum);
+      const answer = await askDocumentQuestion(pdfBytes, question, targetPageNum, annotations);
       const aiMsg: ChatMessage = {
         id: `ai_${Date.now()}`,
         sender: 'ai',
@@ -214,14 +224,25 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Save custom key
-  const handleSaveCustomKey = () => {
-    if (customKeyInput.trim()) {
-      localStorage.setItem('gemini_custom_api_key', customKeyInput.trim());
-    } else {
-      localStorage.removeItem('gemini_custom_api_key');
+  // Zugangscode speichern und gleich bei der App prüfen
+  const handleSaveCustomKey = async () => {
+    const code = codeInput.trim();
+    setCodeFehler(null);
+    if (code && !istZugangscode(code)) {
+      setCodeFehler('Das ist kein Zugangscode von NotionaryAtlas (beginnt mit „na_“).');
+      return;
     }
-    setHasApiKey(!!getActiveGeminiApiKey());
+    if (code) {
+      setCodePrueft(true);
+      const status = await pruefeZugangscode(code);
+      setCodePrueft(false);
+      if (!status.verbunden) {
+        setCodeFehler(status.fehler || 'Der Zugangscode wurde nicht angenommen.');
+        return;
+      }
+    }
+    setZugangscode(code);
+    setHasApiKey(hasKiZugang());
     setShowKeySettings(false);
   };
 
@@ -255,10 +276,10 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
                   ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                   : 'bg-amber-50 text-amber-700 hover:bg-amber-100 animate-pulse'
               }`}
-              title="API-Schlüssel Einstellungen"
+              title="KI-Zugang einrichten"
             >
               <Key size={14} />
-              <span className="hidden sm:inline">{hasApiKey ? 'Aktiv' : 'Schlüssel nötig'}</span>
+              <span className="hidden sm:inline">{hasApiKey ? 'Aktiv' : 'Zugang nötig'}</span>
             </button>
 
             <button
@@ -276,35 +297,38 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
             <div className="flex items-center justify-between mb-2">
               <span className="font-bold text-gray-800 flex items-center gap-1.5">
                 <Settings size={14} />
-                Google Gemini API-Schlüssel
+                Zugangscode von NotionaryAtlas
               </span>
               <a
-                href="https://aistudio.google.com/app/apikey"
+                href={APP_MARKETPLACE_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="text-[#0071E3] hover:underline"
               >
-                Kostenlosen Schlüssel holen ↗
+                Code im Marketplace erstellen ↗
               </a>
             </div>
             <p className="text-gray-500 mb-2.5 leading-relaxed">
-              Dein Schlüssel wird sicher und ausschließlich lokal in deinem Browser gespeichert.
+              Die KI läuft über dein NotionaryAtlas-Konto und dessen KI-Credits. Der Code bleibt lokal auf diesem Gerät.
+              {getActiveGeminiApiKey() && ' Ein eigener Gemini-Schlüssel ist hinterlegt und hat Vorrang (Einstellungen → KI).'}
             </p>
             <div className="flex gap-2">
               <input
                 type="password"
-                value={customKeyInput}
-                onChange={(e) => setCustomKeyInput(e.target.value)}
-                placeholder="AIzaSy..."
+                value={codeInput}
+                onChange={(e) => setCodeInput(e.target.value)}
+                placeholder="na_..."
                 className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-[#0071E3] font-mono text-xs"
               />
               <button
                 onClick={handleSaveCustomKey}
-                className="px-4 py-2 bg-[#0071E3] hover:bg-blue-600 text-white rounded-xl font-semibold transition"
+                disabled={codePrueft}
+                className="px-4 py-2 bg-[#0071E3] hover:bg-blue-600 text-white rounded-xl font-semibold transition disabled:opacity-60"
               >
-                Speichern
+                {codePrueft ? 'Prüfe…' : 'Speichern'}
               </button>
             </div>
+            {codeFehler && <p className="mt-2 text-red-600">{codeFehler}</p>}
           </div>
         )}
 
@@ -313,13 +337,13 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
           <div className="p-3 bg-amber-50 border-b border-amber-200 text-xs text-amber-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertCircle size={16} className="text-amber-600 shrink-0" />
-              <span>Es ist noch kein Gemini API-Schlüssel hinterlegt.</span>
+              <span>Die KI ist noch nicht eingerichtet – du brauchst einen Zugangscode aus NotionaryAtlas.</span>
             </div>
             <button
               onClick={() => setShowKeySettings(true)}
               className="font-bold underline hover:opacity-80"
             >
-              Jetzt hinterlegen
+              Jetzt einrichten
             </button>
           </div>
         )}
@@ -466,7 +490,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
                 className="w-full py-3 bg-gradient-to-r from-[#0071E3] to-[#0077ED] hover:from-[#0077ED] hover:to-[#005bb5] text-white font-semibold text-sm rounded-xl shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                <span>Zusammenfassung generieren</span>
+                <span>Zusammenfassung generieren {scope === 'current' ? `(Seite ${currentPage})` : '(Ganzes Dokument)'}</span>
               </button>
             </div>
           )}
@@ -484,7 +508,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
                 className="w-full py-3 bg-[#0071E3] hover:bg-[#0077ED] text-white font-semibold text-sm rounded-xl shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {loading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                <span>Rechtschreibung & Grammatik prüfen</span>
+                <span>Rechtschreibung & Grammatik prüfen {scope === 'current' ? `(Seite ${currentPage})` : '(Ganzes Dokument)'}</span>
               </button>
             </div>
           )}
@@ -519,7 +543,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
                 className="w-full py-3 bg-[#0071E3] hover:bg-[#0077ED] text-white font-semibold text-sm rounded-xl shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {loading ? <Loader2 size={16} className="animate-spin" /> : <Globe size={16} />}
-                <span>In {targetLang} übersetzen</span>
+                <span>In {targetLang} übersetzen {scope === 'current' ? `(Seite ${currentPage})` : '(Ganzes Dokument)'}</span>
               </button>
             </div>
           )}
@@ -642,19 +666,35 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
                         {msg.text}
                       </div>
                       {msg.sender === 'ai' && (
-                        <div className="flex gap-2 mt-1 px-1">
+                        <div className="flex flex-wrap gap-2 mt-1 px-1">
                           <button
                             onClick={() => handleCopyText(msg.text)}
                             className="text-[10px] text-gray-400 hover:text-gray-700 flex items-center gap-1"
                           >
                             <Copy size={10} /> Kopieren
                           </button>
+                          {onReplaceCurrentPage && (
+                            <button
+                              onClick={() => onReplaceCurrentPage(msg.text)}
+                              className="text-[10px] text-[#0071E3] hover:underline flex items-center gap-1 font-semibold"
+                            >
+                              <RefreshCw size={10} /> Seite {currentPage} ersetzen
+                            </button>
+                          )}
                           <button
                             onClick={() => onInsertTextIntoPage(msg.text)}
-                            className="text-[10px] text-[#0071E3] hover:underline flex items-center gap-1"
+                            className="text-[10px] text-gray-500 hover:underline flex items-center gap-1"
                           >
-                            <PlusCircle size={10} /> In PDF
+                            <PlusCircle size={10} /> Als Textfeld
                           </button>
+                          {onInsertAsNewPage && (
+                            <button
+                              onClick={() => onInsertAsNewPage(msg.text)}
+                              className="text-[10px] text-emerald-600 hover:underline flex items-center gap-1 font-semibold"
+                            >
+                              <FilePlus size={10} /> Als neue A4-Seite
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -698,49 +738,100 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
           )}
 
           {/* Result Presentation Box (For Summary, Grammar, Translate, Rewrite) */}
-          {activeTab !== 'chat' && resultText && (
-            <div className="space-y-3 pt-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                  <Sparkles size={13} className="text-purple-600" />
-                  Ergebnis von Gemini
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleCopyText(resultText)}
-                    className="flex items-center gap-1 text-xs text-gray-600 hover:text-black bg-gray-100 hover:bg-gray-200 px-2.5 py-1 rounded-lg transition"
-                  >
-                    {copied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
-                    <span>{copied ? 'Kopiert!' : 'Kopieren'}</span>
-                  </button>
+          {activeTab !== 'chat' && resultText && (() => {
+            const cleanResult = formatMarkdownToCleanText(resultText);
+            const slices = paginateDocumentForA4(cleanResult, 14);
+            const pageCount = slices.length;
 
-                  <button
-                    onClick={() => onInsertTextIntoPage(resultText)}
-                    className="flex items-center gap-1 text-xs text-white bg-[#0071E3] hover:bg-blue-600 px-3 py-1 rounded-lg transition shadow-sm font-semibold"
-                    title="Fügt den Text als Textfeld auf der aktuellen PDF-Seite ein"
-                  >
-                    <PlusCircle size={13} />
-                    <span>In PDF einfügen</span>
-                  </button>
-
-                  {onInsertAsNewPage && (
+            return (
+              <div className="space-y-3 pt-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                    <Sparkles size={13} className="text-purple-600" />
+                    Ergebnis von Gemini
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
-                      onClick={() => onInsertAsNewPage(resultText)}
-                      className="flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg transition font-semibold"
-                      title="Hängt eine neue Seite ans PDF an und platziert diesen Text"
+                      onClick={() => handleCopyText(resultText)}
+                      className="flex items-center gap-1 text-xs text-gray-600 hover:text-black bg-gray-100 hover:bg-gray-200 px-2.5 py-1.5 rounded-lg transition font-medium"
                     >
-                      <FilePlus size={13} />
-                      <span>Als neue Seite</span>
+                      {copied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                      <span>{copied ? 'Kopiert!' : 'Kopieren'}</span>
                     </button>
-                  )}
+
+                    {/* Replace current page cleanly (Clean A4 replacement, no leftover text underneath) */}
+                    {onReplaceCurrentPage && (
+                      <button
+                        onClick={() => onReplaceCurrentPage(resultText)}
+                        className={`flex items-center gap-1.5 text-xs text-white px-3 py-1.5 rounded-lg transition shadow-sm font-semibold ${
+                          activeTab === 'translate' || activeTab === 'grammar' || activeTab === 'rewrite'
+                            ? 'bg-[#0071E3] hover:bg-blue-600 ring-2 ring-blue-400/20'
+                            : 'bg-[#0071E3] hover:bg-blue-600'
+                        }`}
+                        title={
+                          pageCount > 1
+                            ? `Ersetzt Seite ${currentPage} sauber durch Seite 1 und legt ${pageCount - 1} Folgeseite(n) direkt danach an (keine alten Textreste darunter)`
+                            : `Ersetzt den Inhalt von Seite ${currentPage} vollständig und sauber durch den neuen Text (keine alten Textreste darunter)`
+                        }
+                      >
+                        <RefreshCw size={13} />
+                        <span>
+                          {pageCount > 1
+                            ? `Seite ${currentPage} ersetzen (+ ${pageCount - 1} Folgeseite${pageCount > 2 ? 'n' : ''})`
+                            : `Seite ${currentPage} ersetzen`}
+                        </span>
+                      </button>
+                    )}
+
+                    {/* Append as new dedicated A4 pages */}
+                    {onInsertAsNewPage && (
+                      <button
+                        onClick={() => onInsertAsNewPage(resultText)}
+                        className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg transition font-semibold shadow-sm ${
+                          activeTab === 'summary'
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        }`}
+                        title="Hängt neue saubere DIN A4 Seiten ans Dokumentende an"
+                      >
+                        <FilePlus size={13} className={activeTab === 'summary' ? 'text-white' : 'text-emerald-600'} />
+                        <span>
+                          {pageCount > 1
+                            ? `Als ${pageCount} A4-Seiten anfügen (mit Umbruch)`
+                            : 'Als neue A4-Seite anfügen'}
+                        </span>
+                      </button>
+                    )}
+
+                    {/* Insert as floating text box on current page */}
+                    <button
+                      onClick={() => onInsertTextIntoPage(resultText)}
+                      className="flex items-center gap-1 text-xs text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-300/70 px-2.5 py-1.5 rounded-lg transition font-medium"
+                      title={`Fügt den Text als Textfeld über den bestehenden Inhalt von Seite ${currentPage} ein (Inhalt bleibt erhalten)`}
+                    >
+                      <PlusCircle size={13} />
+                      <span>Als Textfeld</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* A4 Optimization Info Badge */}
+                <div className="flex items-center justify-between px-3 py-1.5 bg-blue-50/70 border border-blue-100 rounded-xl text-[11px] text-blue-900 font-medium">
+                  <span className="flex items-center gap-1.5">
+                    <FileText size={12} className="text-blue-600 shrink-0" />
+                    <span>A4-optimiert: <strong>14px Fließtext</strong>, H1 (20px bold), H2 (16px bold)</span>
+                  </span>
+                  <span className="font-semibold text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-md whitespace-nowrap ml-2">
+                    {pageCount} DIN A4 Seite{pageCount > 1 ? 'n' : ''}
+                  </span>
+                </div>
+
+                <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl text-xs text-gray-800 whitespace-pre-wrap font-sans leading-relaxed shadow-inner max-h-96 overflow-y-auto">
+                  {resultText}
                 </div>
               </div>
-
-              <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl text-xs text-gray-800 whitespace-pre-wrap font-sans leading-relaxed shadow-inner max-h-96 overflow-y-auto">
-                {resultText}
-              </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
     </div>

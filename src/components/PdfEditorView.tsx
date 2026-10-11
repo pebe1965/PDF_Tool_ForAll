@@ -23,15 +23,18 @@ import { AnnotationLayer } from './AnnotationLayer';
 import { SignatureModal } from './SignatureModal';
 import { GeminiAiModal } from './GeminiAiModal';
 import { formatMarkdownToCleanText } from '../lib/geminiService';
+import { paginateDocumentForA4 } from '../lib/a4Pagination';
 import { Annotation, TextAnnotation, SignatureAnnotation, ImageAnnotation } from '../types/pdf';
 import {
   applyAnnotationsToPdf,
   downloadPdf,
   createBlankPdfDocument,
   addBlankPageToPdf,
+  addMultipleBlankPagesToPdf,
   appendPdfToPdf,
   deletePageFromPdf,
   processImageFile,
+  replacePageWithBlank,
 } from '../lib/pdfEngine';
 
 interface PdfEditorViewProps {
@@ -283,7 +286,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       y: normY,
       width: 0.32,
       text: 'Hier tippen...',
-      fontSize: 16,
+      fontSize: 14,
       color: '#000000',
       backgroundColor: 'transparent',
     };
@@ -409,71 +412,188 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     setSelectedAnnId(newSigAnn.id);
   };
 
-  // Insert AI generated text into current page
-  const handleInsertTextFromAi = (text: string) => {
+  // Insert AI generated text into current page (with 14px typography and auto-continuation if multi-page)
+  const handleInsertTextFromAi = async (text: string) => {
     const cleanText = formatMarkdownToCleanText(text);
-    const charCount = cleanText.length;
-    let initialFontSize = 13;
-    if (charCount > 1000) {
-      initialFontSize = 10;
-    } else if (charCount > 400) {
-      initialFontSize = 11;
-    }
+    const pages = paginateDocumentForA4(cleanText, 14);
 
-    const newTextAnn: TextAnnotation = {
-      id: `text_${Date.now()}`,
-      type: 'text',
-      pageNumber: currentPage,
-      x: 0.08,
-      y: 0.1,
-      width: 0.84,
-      text: cleanText,
-      fontSize: initialFontSize,
-      color: '#000000',
-      backgroundColor: '#FFFFFF',
-    };
-
-    setAnnotations((prev) => [...prev, newTextAnn]);
-    setSelectedAnnId(newTextAnn.id);
-    setAiOpen(false);
-  };
-
-  // Insert AI generated text as a brand new page
-  const handleInsertAsNewPageFromAi = async (text: string) => {
-    if (!pdfBytes) return;
-    try {
-      const cleanText = formatMarkdownToCleanText(text);
-      const updatedBytes = await addBlankPageToPdf(pdfBytes);
-      const newPageNum = numPages + 1;
-      await reloadPdfFromBuffer(updatedBytes, newPageNum);
-
-      const charCount = cleanText.length;
-      let initialFontSize = 12;
-      if (charCount > 1200) {
-        initialFontSize = 10;
-      } else if (charCount > 500) {
-        initialFontSize = 11;
-      }
-
+    if (pages.length <= 1 || !pdfBytes) {
       const newTextAnn: TextAnnotation = {
         id: `text_${Date.now()}`,
         type: 'text',
-        pageNumber: newPageNum,
+        pageNumber: currentPage,
         x: 0.08,
         y: 0.08,
         width: 0.84,
-        text: cleanText,
-        fontSize: initialFontSize,
+        text: pages[0] || cleanText,
+        fontSize: 14,
         color: '#000000',
-        backgroundColor: 'transparent',
+        backgroundColor: '#FFFFFF',
       };
 
       setAnnotations((prev) => [...prev, newTextAnn]);
       setSelectedAnnId(newTextAnn.id);
       setAiOpen(false);
+      return;
+    }
+
+    // If text exceeds 1 A4 page, place page 1 on current page and insert continuation pages directly after currentPage
+    setLoading(true);
+    try {
+      const additionalCount = pages.length - 1;
+      // Insert blank pages directly after currentPage (0-indexed afterIndex: currentPage - 1)
+      const updatedBytes = await addMultipleBlankPagesToPdf(
+        pdfBytes,
+        additionalCount,
+        currentPage - 1
+      );
+      await reloadPdfFromBuffer(updatedBytes, currentPage);
+
+      const page1Ann: TextAnnotation = {
+        id: `text_${Date.now()}_0`,
+        type: 'text',
+        pageNumber: currentPage,
+        x: 0.08,
+        y: 0.08,
+        width: 0.84,
+        text: pages[0],
+        fontSize: 14,
+        color: '#000000',
+        backgroundColor: '#FFFFFF',
+      };
+
+      const remainingAnns: TextAnnotation[] = pages.slice(1).map((pageSlice, idx) => ({
+        id: `text_${Date.now()}_${idx + 1}`,
+        type: 'text',
+        pageNumber: currentPage + 1 + idx,
+        x: 0.08,
+        y: 0.08,
+        width: 0.84,
+        text: pageSlice,
+        fontSize: 14,
+        color: '#000000',
+        backgroundColor: 'transparent',
+      }));
+
+      // Shift existing annotations on pages > currentPage by additionalCount
+      setAnnotations((prev) => [
+        ...prev.map((a) =>
+          a.pageNumber > currentPage ? { ...a, pageNumber: a.pageNumber + additionalCount } : a
+        ),
+        page1Ann,
+        ...remainingAnns,
+      ]);
+      setSelectedAnnId(page1Ann.id);
+      setAiOpen(false);
     } catch (err) {
-      console.error('Fehler beim Einfügen als neue Seite:', err);
-      alert('Konnte keine neue Seite für den KI-Text anlegen.');
+      console.error('Fehler beim Einfügen in Seite:', err);
+      alert('Konnte Text nicht vollständig aufteilen.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Replace current page with clean AI generated text (replaces the page with a clean blank page so no old text remains underneath)
+  const handleReplaceCurrentPageWithAiText = async (text: string) => {
+    if (!pdfBytes) return;
+    const cleanText = formatMarkdownToCleanText(text);
+    const pages = paginateDocumentForA4(cleanText, 14);
+    const additionalCount = Math.max(0, pages.length - 1);
+
+    setLoading(true);
+    try {
+      // Cleanly replace currentPage with a fresh blank page and insert any continuation pages directly after it
+      const updatedBytes = await replacePageWithBlank(
+        pdfBytes,
+        currentPage - 1,
+        additionalCount
+      );
+
+      await reloadPdfFromBuffer(updatedBytes, currentPage);
+
+      const page1Ann: TextAnnotation = {
+        id: `text_${Date.now()}_0`,
+        type: 'text',
+        pageNumber: currentPage,
+        x: 0.08,
+        y: 0.08,
+        width: 0.84,
+        text: pages[0] || cleanText,
+        fontSize: 14,
+        color: '#000000',
+        backgroundColor: 'transparent',
+      };
+
+      const remainingAnns: TextAnnotation[] = pages.slice(1).map((pageSlice, idx) => ({
+        id: `text_${Date.now()}_${idx + 1}`,
+        type: 'text',
+        pageNumber: currentPage + 1 + idx,
+        x: 0.08,
+        y: 0.08,
+        width: 0.84,
+        text: pageSlice,
+        fontSize: 14,
+        color: '#000000',
+        backgroundColor: 'transparent',
+      }));
+
+      // Remove existing annotations on currentPage and shift annotations on subsequent pages by additionalCount
+      setAnnotations((prev) => [
+        ...prev
+          .filter((a) => a.pageNumber !== currentPage)
+          .map((a) =>
+            a.pageNumber > currentPage ? { ...a, pageNumber: a.pageNumber + additionalCount } : a
+          ),
+        page1Ann,
+        ...remainingAnns,
+      ]);
+
+      setSelectedAnnId(page1Ann.id);
+      setAiOpen(false);
+    } catch (err) {
+      console.error('Fehler beim Ersetzen der Seite durch KI-Text:', err);
+      alert('Konnte Seite nicht durch KI-Text ersetzen.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Insert AI generated text as new dedicated A4 page(s) (with A4 pagination at 14px)
+  const handleInsertAsNewPageFromAi = async (text: string) => {
+    if (!pdfBytes) return;
+    setLoading(true);
+    try {
+      const cleanText = formatMarkdownToCleanText(text);
+      const pages = paginateDocumentForA4(cleanText, 14);
+      const pageCount = pages.length;
+
+      const updatedBytes = await addMultipleBlankPagesToPdf(pdfBytes, pageCount);
+      const startPageNum = numPages + 1;
+      await reloadPdfFromBuffer(updatedBytes, startPageNum);
+
+      const newAnnotations: TextAnnotation[] = pages.map((pageSlice, idx) => ({
+        id: `text_${Date.now()}_${idx}`,
+        type: 'text',
+        pageNumber: startPageNum + idx,
+        x: 0.08,
+        y: 0.08,
+        width: 0.84,
+        text: pageSlice,
+        fontSize: 14,
+        color: '#000000',
+        backgroundColor: 'transparent',
+      }));
+
+      setAnnotations((prev) => [...prev, ...newAnnotations]);
+      if (newAnnotations.length > 0) {
+        setSelectedAnnId(newAnnotations[0].id);
+      }
+      setAiOpen(false);
+    } catch (err) {
+      console.error('Fehler beim Einfügen als neue Seite(n):', err);
+      alert('Konnte keine neuen A4-Seiten für den KI-Text anlegen.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -902,8 +1022,10 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         pdfBytes={pdfBytes}
         currentPage={currentPage}
         numPages={numPages}
+        annotations={annotations}
         onInsertTextIntoPage={handleInsertTextFromAi}
         onInsertAsNewPage={handleInsertAsNewPageFromAi}
+        onReplaceCurrentPage={handleReplaceCurrentPageWithAiText}
       />
     </div>
   );

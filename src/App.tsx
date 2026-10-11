@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { Header } from './components/Header';
 import { PdfEditorView } from './components/PdfEditorView';
 import { PdfMergeView } from './components/PdfMergeView';
+import { SettingsModal } from './components/SettingsModal';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'editor' | 'merge'>('editor');
   const [sharedPdfBytes, setSharedPdfBytes] = useState<ArrayBuffer | null>(null);
   const [sharedFileName, setSharedFileName] = useState<string>('Dokument.pdf');
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // When Editor updates its working document
   const handleEditorPdfUpdate = (bytes: ArrayBuffer, fileName: string) => {
@@ -31,6 +33,7 @@ export function App() {
           setActiveTab('editor');
           setIsAiModalOpen(true);
         }}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
       <main className="flex-1 overflow-hidden relative">
         {/* We keep both views mounted and toggle visibility so no user state or uploads are lost! */}
@@ -53,6 +56,12 @@ export function App() {
           />
         </div>
       </main>
+
+      {/* Global Settings & Update Check Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
     </div>
   );
 }

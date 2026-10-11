@@ -9,8 +9,11 @@ import {
   Lock,
   Unlock,
   ImageIcon,
+  Edit3,
+  Check,
 } from 'lucide-react';
 import { TextAnnotation, SignatureAnnotation, ImageAnnotation, Annotation } from '../types/pdf';
+import { classifyLine } from '../lib/a4Pagination';
 
 interface AnnotationLayerProps {
   pageNumber: number;
@@ -55,6 +58,21 @@ const TextAnnotationItem: React.FC<{
   onStartResize,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [isEditing, setIsEditing] = useState<boolean>(!textAnn.text || textAnn.text.trim().length === 0);
+
+  // If selection is lost, exit edit mode
+  useEffect(() => {
+    if (!isSelected) {
+      setIsEditing(false);
+    }
+  }, [isSelected]);
+
+  // Focus textarea when entering edit mode
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [isEditing]);
 
   // Default width to 30% of page if undefined
   const effectiveWidthNorm = textAnn.width || 0.3;
@@ -68,7 +86,7 @@ const TextAnnotationItem: React.FC<{
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${Math.max(28, textareaRef.current.scrollHeight)}px`;
     }
-  }, [textAnn.text, textAnn.fontSize, effectiveWidthNorm, pageWidth, textAnn.fontFamily, textAnn.isBold]);
+  }, [textAnn.text, textAnn.fontSize, effectiveWidthNorm, pageWidth, textAnn.fontFamily, textAnn.isBold, isEditing]);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onUpdate({ ...textAnn, text: e.target.value });
@@ -109,6 +127,31 @@ const TextAnnotationItem: React.FC<{
           className="absolute -top-11 left-0 flex items-center gap-1.5 bg-[#1D1D1F] text-white px-2.5 py-1.5 rounded-xl shadow-2xl text-xs z-30 select-none whitespace-nowrap"
           onPointerDown={(e) => e.stopPropagation()}
         >
+          {/* Edit / Done Toggle */}
+          <button
+            onClick={() => setIsEditing(!isEditing)}
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition ${
+              isEditing
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                : 'bg-[#0071E3] hover:bg-blue-600 text-white'
+            }`}
+            title={isEditing ? 'Bearbeitung abschließen' : 'Text bearbeiten'}
+          >
+            {isEditing ? (
+              <>
+                <Check size={12} />
+                <span>Fertig</span>
+              </>
+            ) : (
+              <>
+                <Edit3 size={12} />
+                <span>Bearbeiten</span>
+              </>
+            )}
+          </button>
+
+          <div className="w-[1px] h-3.5 bg-white/20" />
+
           {/* Font Family Selector */}
           <select
             value={textAnn.fontFamily || 'Helvetica'}
@@ -260,7 +303,7 @@ const TextAnnotationItem: React.FC<{
         </div>
       )}
 
-      {/* Box Inner Layout: Drag Grip + Auto-expanding Textarea */}
+      {/* Box Inner Layout: Drag Grip + Formatted View or Auto-expanding Textarea */}
       <div className="relative p-1.5 flex items-start gap-1">
         {/* Dedicated Drag Handle */}
         <div
@@ -271,24 +314,117 @@ const TextAnnotationItem: React.FC<{
           <Move size={14} />
         </div>
 
-        {/* Textarea */}
-        <textarea
-          ref={textareaRef}
-          value={textAnn.text}
-          onChange={handleTextChange}
-          style={{
-            fontSize: `${textAnn.fontSize}px`,
-            color: textAnn.color,
-            lineHeight: '1.3',
-            fontFamily: getFontFamilyCss(textAnn.fontFamily),
-            fontWeight: textAnn.isBold ? 'bold' : 'normal',
-            fontStyle: textAnn.isItalic ? 'italic' : 'normal',
-            backgroundColor: 'transparent',
-          }}
-          className="w-full bg-transparent border-0 focus:outline-none resize-none p-0 m-0 overflow-hidden break-words"
-          placeholder="Text eingeben..."
-          rows={1}
-        />
+        {isEditing ? (
+          /* Textarea while actively editing */
+          <textarea
+            ref={textareaRef}
+            value={textAnn.text}
+            onChange={handleTextChange}
+            style={{
+              fontSize: `${textAnn.fontSize}px`,
+              color: textAnn.color,
+              lineHeight: '1.4',
+              fontFamily: getFontFamilyCss(textAnn.fontFamily),
+              fontWeight: textAnn.isBold ? 'bold' : 'normal',
+              fontStyle: textAnn.isItalic ? 'italic' : 'normal',
+              backgroundColor: 'transparent',
+            }}
+            className="w-full bg-transparent border-0 focus:outline-none resize-none p-0 m-0 overflow-hidden break-words"
+            placeholder="Text eingeben..."
+            rows={1}
+          />
+        ) : (
+          /* Formatted Typography View (H1 at 20px bold, H2 at 16px bold, body at 14px) */
+          <div
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              setIsEditing(true);
+            }}
+            style={{
+              fontFamily: getFontFamilyCss(textAnn.fontFamily),
+              color: textAnn.color,
+            }}
+            className="w-full select-text cursor-text py-0.5 leading-relaxed"
+            title="Doppelklick zum Bearbeiten"
+          >
+            {textAnn.text ? (
+              textAnn.text.split('\n').map((line, idx) => {
+                const classified = classifyLine(line, textAnn.fontSize);
+                if (classified.type === 'empty') {
+                  return <div key={idx} style={{ height: `${textAnn.fontSize * 0.7}px` }} />;
+                }
+                if (classified.type === 'h1') {
+                  return (
+                    <h1
+                      key={idx}
+                      style={{
+                        fontSize: '20px',
+                        fontWeight: 'bold',
+                        marginTop: idx === 0 ? '0px' : '14px',
+                        marginBottom: '4px',
+                        lineHeight: '1.25',
+                        color: textAnn.color,
+                      }}
+                    >
+                      {classified.text}
+                    </h1>
+                  );
+                }
+                if (classified.type === 'h2') {
+                  return (
+                    <h2
+                      key={idx}
+                      style={{
+                        fontSize: '16px',
+                        fontWeight: 'bold',
+                        marginTop: idx === 0 ? '0px' : '10px',
+                        marginBottom: '3px',
+                        lineHeight: '1.3',
+                        color: textAnn.color,
+                      }}
+                    >
+                      {classified.text}
+                    </h2>
+                  );
+                }
+                if (classified.type === 'bullet') {
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        fontSize: `${textAnn.fontSize}px`,
+                        lineHeight: '1.4',
+                        display: 'flex',
+                        alignItems: 'baseline',
+                        gap: '6px',
+                        marginTop: '2px',
+                      }}
+                    >
+                      <span style={{ fontSize: `${textAnn.fontSize}px`, fontWeight: 'bold' }}>•</span>
+                      <span>{classified.text}</span>
+                    </div>
+                  );
+                }
+                return (
+                  <p
+                    key={idx}
+                    style={{
+                      fontSize: `${textAnn.fontSize}px`,
+                      lineHeight: '1.4',
+                      marginTop: '2px',
+                      fontWeight: textAnn.isBold ? 'bold' : 'normal',
+                      fontStyle: textAnn.isItalic ? 'italic' : 'normal',
+                    }}
+                  >
+                    {classified.text}
+                  </p>
+                );
+              })
+            ) : (
+              <span className="text-gray-400 italic text-xs">Text eingeben (Doppelklick)...</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Resize Handles (Visible when selected) */}

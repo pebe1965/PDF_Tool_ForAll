@@ -1,5 +1,6 @@
 import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import { Annotation, MergePageItem } from '../types/pdf';
+import { classifyLine } from './a4Pagination';
 
 // Helper to convert hex color (#0071E3) to pdf-lib rgb(r, g, b)
 function hexToRgb(hex: string) {
@@ -116,48 +117,106 @@ export async function applyAnnotationsToPdf(
     if (ann.type === 'text') {
       try {
         const textColor = hexToRgb(ann.color || '#000000');
-        const font = await getEmbeddedFont(
+        const baseSize = ann.fontSize || 14;
+
+        const regularFont = await getEmbeddedFont(
           pdfDoc,
           fontCache,
           ann.fontFamily || 'Helvetica',
-          ann.isBold || false,
+          false,
+          ann.isItalic || false
+        );
+        const boldFont = await getEmbeddedFont(
+          pdfDoc,
+          fontCache,
+          ann.fontFamily || 'Helvetica',
+          true,
           ann.isItalic || false
         );
 
         // Convert normalized top-left coordinates to PDF bottom-left coordinates
         const pdfX = ann.x * pageWidth;
-        const pdfY = pageHeight - (ann.y * pageHeight) - (ann.fontSize * 0.85);
-
-        // Wrap text based on box width (or remainder of the page)
         const boxWidth = ann.width ? ann.width * pageWidth : pageWidth - pdfX;
-        const lines = wrapText(ann.text, boxWidth, font, ann.fontSize);
-        const lineHeight = ann.fontSize * 1.25;
-        const totalHeight = Math.max(1, lines.length) * lineHeight;
 
-        // Draw background rectangle if configured (e.g. white to cover old text, yellow note)
+        // Process lines and segment by typography (H1, H2, body)
+        const rawLines = ann.text.split('\n');
+        interface RenderSegment {
+          text: string;
+          size: number;
+          font: any;
+          lineHeight: number;
+          topGap: number;
+        }
+        const segments: RenderSegment[] = [];
+
+        for (const rawLine of rawLines) {
+          const classified = classifyLine(rawLine, baseSize);
+          if (classified.type === 'empty') {
+            segments.push({
+              text: '',
+              size: baseSize,
+              font: regularFont,
+              lineHeight: baseSize * 0.7,
+              topGap: 4,
+            });
+            continue;
+          }
+
+          let lineFont = classified.isBold ? boldFont : regularFont;
+          let lineSize = classified.fontSize;
+          let lineH = classified.lineHeight;
+
+          if (ann.isBold) lineFont = boldFont;
+
+          const wrappedSublines = wrapText(classified.text, boxWidth, lineFont, lineSize);
+          for (let i = 0; i < wrappedSublines.length; i++) {
+            let lineText = wrappedSublines[i];
+            if (classified.type === 'bullet') {
+              lineText = i === 0 ? `- ${lineText}` : `  ${lineText}`;
+            }
+            segments.push({
+              text: lineText,
+              size: lineSize,
+              font: lineFont,
+              lineHeight: lineH,
+              topGap: i === 0 ? classified.topGap : 0,
+            });
+          }
+        }
+
+        const totalHeight = segments.reduce((sum, s) => sum + s.topGap + s.lineHeight, 0);
+        const pdfY = pageHeight - (ann.y * pageHeight) - 16;
+
+        // Draw background rectangle if configured
         if (ann.backgroundColor && ann.backgroundColor !== 'transparent') {
-          const bgPad = 4;
+          const bgPad = 6;
+          // If this is a page-covering text box (full width, starts near top), extend background to bottom margin (35 pt)
+          const isFullPageCover = (ann.x <= 0.12 && (ann.width || 0.84) >= 0.8 && ann.y <= 0.12);
+          const rectBottom = isFullPageCover ? 35 : Math.max(0, pdfY - totalHeight);
+          const rectHeight = isFullPageCover ? Math.max(totalHeight + (bgPad * 2), pdfY + bgPad - 35) : (totalHeight + (bgPad * 2));
+
           page.drawRectangle({
             x: Math.max(0, pdfX - bgPad),
-            y: Math.max(0, pdfY - totalHeight + (ann.fontSize * 0.4)),
+            y: rectBottom,
             width: boxWidth + (bgPad * 2),
-            height: totalHeight + (bgPad * 2),
+            height: rectHeight,
             color: hexToRgb(ann.backgroundColor),
           });
         }
 
         let currentY = pdfY;
-        for (const line of lines) {
-          if (line) {
-            page.drawText(line, {
+        for (const seg of segments) {
+          currentY -= seg.topGap;
+          if (seg.text && currentY > 35) { // Protect from drawing off the bottom of the page
+            page.drawText(seg.text, {
               x: Math.max(0, pdfX),
               y: Math.max(0, currentY),
-              size: ann.fontSize,
-              font: font,
+              size: seg.size,
+              font: seg.font,
               color: textColor,
             });
           }
-          currentY -= lineHeight;
+          currentY -= seg.lineHeight;
         }
       } catch (err) {
         console.error('Fehler beim Zeichnen des Texts:', err);
@@ -304,10 +363,35 @@ export async function addBlankPageToPdf(
   const samplePage = pages[0];
   const { width, height } = samplePage ? samplePage.getSize() : { width: 595.28, height: 841.89 };
 
-  if (afterIndex !== undefined && afterIndex >= 0 && afterIndex < pages.length - 1) {
+  if (afterIndex !== undefined && afterIndex >= 0 && afterIndex < doc.getPageCount()) {
     doc.insertPage(afterIndex + 1, [width, height]);
   } else {
     doc.addPage([width, height]);
+  }
+
+  return await doc.save();
+}
+
+/**
+ * Adds multiple blank pages to an existing PDF (after a specific page or at the end)
+ */
+export async function addMultipleBlankPagesToPdf(
+  pdfBytes: ArrayBuffer,
+  count: number = 1,
+  afterIndex?: number
+): Promise<Uint8Array> {
+  if (count <= 0) return new Uint8Array(pdfBytes);
+  const doc = await PDFDocument.load(pdfBytes);
+  const pages = doc.getPages();
+  const samplePage = pages[0];
+  const { width, height } = samplePage ? samplePage.getSize() : { width: 595.28, height: 841.89 };
+
+  for (let i = 0; i < count; i++) {
+    if (afterIndex !== undefined && afterIndex >= 0 && afterIndex < doc.getPageCount()) {
+      doc.insertPage(afterIndex + 1 + i, [width, height]);
+    } else {
+      doc.addPage([width, height]);
+    }
   }
 
   return await doc.save();
@@ -344,5 +428,49 @@ export async function deletePageFromPdf(
     throw new Error('Ein Dokument muss mindestens eine Seite enthalten.');
   }
   doc.removePage(pageIndex);
+  return await doc.save();
+}
+
+/**
+ * Extracts a single page from a PDF document into a standalone 1-page PDF buffer
+ */
+export async function extractSinglePageAsPdf(
+  pdfBytes: ArrayBuffer,
+  pageNumber: number // 1-indexed
+): Promise<Uint8Array> {
+  const srcDoc = await PDFDocument.load(pdfBytes);
+  const newDoc = await PDFDocument.create();
+  const pageIndex = Math.max(0, Math.min(srcDoc.getPageCount() - 1, pageNumber - 1));
+  const [copiedPage] = await newDoc.copyPages(srcDoc, [pageIndex]);
+  newDoc.addPage(copiedPage);
+  return await newDoc.save();
+}
+
+/**
+ * Replaces an existing page with a fresh blank page, and optionally inserts continuation blank pages directly after it.
+ * This completely wipes out any old content on pageIndex so no leftover text or ghost graphics remain.
+ */
+export async function replacePageWithBlank(
+  pdfBytes: ArrayBuffer,
+  pageIndex: number,
+  additionalPages: number = 0
+): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(pdfBytes);
+  if (pageIndex < 0 || pageIndex >= doc.getPageCount()) {
+    return new Uint8Array(pdfBytes);
+  }
+  const origPage = doc.getPage(pageIndex);
+  const { width, height } = origPage.getSize();
+
+  // 1. Insert clean replacement page at pageIndex
+  doc.insertPage(pageIndex, [width, height]);
+  // 2. Remove the old page (which shifted to pageIndex + 1)
+  doc.removePage(pageIndex + 1);
+
+  // 3. Insert any additional continuation blank pages directly after pageIndex
+  for (let i = 0; i < additionalPages; i++) {
+    doc.insertPage(pageIndex + 1 + i, [width, height]);
+  }
+
   return await doc.save();
 }
