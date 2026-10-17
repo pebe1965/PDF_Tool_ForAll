@@ -1,0 +1,40 @@
+{
+  "slug": "pdf-tool-forall",
+  "github_repo": "pebe1965/PDF_Tool_ForAll",
+  "description": "Lokale PDF-Suite für Büro und Alltag: bearbeiten, schreiben, unterschreiben, stempeln, schwärzen, Formulare ausfüllen, zusammenführen, teilen und komprimieren – ohne Upload in eine Cloud. Läuft auch auf dem iPad im selben WLAN.",
+  "integrations": [
+    {
+      "module": "Bearbeiten & Signieren",
+      "description": "Text an beliebiger Stelle einfügen, Unterschrift mit Maus, Trackpad oder Apple Pencil zeichnen, Textmarker, Symbole, Freihand-Stift und Bilder frei platzieren."
+    },
+    {
+      "module": "Textverarbeitung",
+      "description": "Checklisten mit anklickbaren Kästchen, Aufzählungen und nummerierte Listen, Überschriften, Ausrichtung und Einfügen aus der Zwischenablage mit automatischem Seitenumbruch."
+    },
+    {
+      "module": "Stempel, Schwärzen & Formulare",
+      "description": "Büro-Stempel mit Datum, echte DSGVO-Schwärzung, ausfüllbare PDF-Formulare, Seitenzahlen, Kopf-/Fußzeile und Wasserzeichen."
+    },
+    {
+      "module": "Zusammenführen & Ordnen",
+      "description": "Mehrere PDFs und Bilder vereinen, Seiten per Drag & Drop sortieren, drehen, löschen und leere Seiten einfügen."
+    },
+    {
+      "module": "Werkzeuge & Business",
+      "description": "PDF teilen und komprimieren, E-Rechnungen (ZUGFeRD/XRechnung) auslesen und nach Excel exportieren, Dokumente vergleichen, PDF in Bilder umwandeln."
+    },
+    {
+      "module": "Speichern & Updates",
+      "description": "Automatische Zwischenspeicherung, Speichern-Dialog mit Ordnerwahl, wiederbearbeitbare Projektdateien und Update mit einem Klick."
+    },
+    {
+      "module": "KI über dein Konto",
+      "description": "Rechnungsdaten nach Excel extrahieren, Verträge vergleichen und auf Risiken prüfen – über deinen Zugangscode, ohne eigenen Schlüssel."
+    }
+  ],
+  "requirements": [
+    "macOS oder Windows",
+    "Python 3 (unter macOS über die Entwicklerwerkzeuge, unter Windows von python.org)",
+    "Öffnet sich im Browser"
+  ]
+}
