@@ -1,5 +1,5 @@
 // App configuration for versions and GitHub update checks
-export const APP_VERSION = '1.3.1';
+export const APP_VERSION = '1.3.2';
 export const GITHUB_REPO = 'pebe1965/PDF_Tool_ForAll';
 
 export const DEFAULT_GEMINI_MODEL: string = 'gemini-3.7-flash';

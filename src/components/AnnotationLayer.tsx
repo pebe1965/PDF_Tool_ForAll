@@ -750,7 +750,7 @@ const TextAnnotationItem: React.FC<{
                   );
                 }
                 if (classified.type === 'checklist') {
-                  const checkIconSize = Math.max(10, Math.round(displayFontSize * 0.75));
+                  const checkSize = Math.max(9, Math.round(displayFontSize * 0.70));
                   return (
                     <div
                       key={idx}
@@ -758,8 +758,8 @@ const TextAnnotationItem: React.FC<{
                         fontSize: `${displayFontSize}px`,
                         lineHeight: '1.45',
                         display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: `${Math.max(4, Math.round(7 * zoom))}px`,
+                        alignItems: 'center',
+                        gap: `${Math.max(3, Math.round(5 * zoom))}px`,
                         marginTop: `${Math.round(2 * zoom)}px`,
                         textAlign: 'left',
                       }}
@@ -771,13 +771,42 @@ const TextAnnotationItem: React.FC<{
                           onSelect();
                           toggleSpecificChecklistLine(idx);
                         }}
-                        className="mt-0.5 shrink-0 text-gray-600 hover:text-emerald-600 transition"
+                        style={{
+                          width: `${checkSize}px`,
+                          height: `${checkSize}px`,
+                        }}
+                        className="shrink-0 flex items-center justify-center transition"
                         title={classified.checked ? 'Als offen markieren' : 'Abhaken'}
                       >
                         {classified.checked ? (
-                          <CheckSquare size={checkIconSize} className="text-emerald-600 fill-emerald-50" />
+                          <div
+                            style={{
+                              width: `${checkSize}px`,
+                              height: `${checkSize}px`,
+                            }}
+                            className="bg-emerald-600 rounded-[2.5px] flex items-center justify-center text-white"
+                          >
+                            <svg
+                              viewBox="0 0 12 12"
+                              style={{ width: `${checkSize * 0.75}px`, height: `${checkSize * 0.75}px` }}
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <polyline points="2.5 6.5 4.5 9 9.5 3" />
+                            </svg>
+                          </div>
                         ) : (
-                          <Square size={checkIconSize} className="text-gray-500" />
+                          <div
+                            style={{
+                              width: `${checkSize}px`,
+                              height: `${checkSize}px`,
+                              borderWidth: `${Math.max(1.2, 1.2 * zoom)}px`,
+                            }}
+                            className="rounded-[2.5px] border-gray-600 hover:border-[#0071E3] transition bg-white"
+                          />
                         )}
                       </button>
                       <span

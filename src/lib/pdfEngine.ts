@@ -428,11 +428,12 @@ export async function applyAnnotationsToPdf(
 
           if (ann.isBold) lineFont = boldFont;
 
+          const checkSize = Math.max(8, Math.round(lineSize * 0.70));
           const indentX =
             classified.type === 'bullet'
               ? 14
               : classified.type === 'checklist'
-              ? 18
+              ? checkSize + 5
               : classified.type === 'numbered'
               ? 20
               : 0;
@@ -518,9 +519,10 @@ export async function applyAnnotationsToPdf(
                     color: textColor,
                   });
                 } else if (seg.kind === 'checklist') {
-                  const boxSize = Math.max(8, seg.size * 0.72);
-                  const boxX = Math.max(0, pdfX + 1);
-                  const boxY = currentY + seg.size * 0.06;
+                  const boxSize = Math.max(8, Math.round(seg.size * 0.70));
+                  const boxX = Math.max(0, pdfX);
+                  const capHeight = seg.size * 0.70;
+                  const boxY = currentY + (capHeight - boxSize) / 2 + (seg.size * 0.02);
                   if (seg.checked) {
                     page.drawRectangle({
                       x: boxX,
