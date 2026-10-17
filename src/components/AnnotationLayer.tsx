@@ -40,6 +40,7 @@ interface AnnotationLayerProps {
   pageNumber: number;
   pageWidth: number; // rendered CSS pixel width of current page
   pageHeight: number; // rendered CSS pixel height of current page
+  scale?: number; // current zoom scale
   annotations: Annotation[];
   onUpdateAnnotation: (ann: Annotation) => void;
   onDeleteAnnotation: (id: string) => void;
@@ -67,6 +68,7 @@ const TextAnnotationItem: React.FC<{
   textAnn: TextAnnotation;
   pageWidth: number;
   pageHeight: number;
+  scale?: number;
   isSelected: boolean;
   onSelect: () => void;
   onUpdate: (ann: TextAnnotation) => void;
@@ -78,6 +80,7 @@ const TextAnnotationItem: React.FC<{
   textAnn,
   pageWidth,
   pageHeight,
+  scale,
   isSelected,
   onSelect,
   onUpdate,
@@ -106,6 +109,8 @@ const TextAnnotationItem: React.FC<{
     }
   }, [isEditing]);
 
+  const zoom = scale && scale > 0 ? scale : pageWidth / 595.28;
+  const displayFontSize = Math.max(8, Math.round(textAnn.fontSize * zoom));
   const effectiveWidthNorm = textAnn.width || 0.3;
   const leftPx = textAnn.x * pageWidth;
   const topPx = textAnn.y * pageHeight;
@@ -114,9 +119,9 @@ const TextAnnotationItem: React.FC<{
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.max(32, textareaRef.current.scrollHeight)}px`;
+      textareaRef.current.style.height = `${Math.max(28, textareaRef.current.scrollHeight)}px`;
     }
-  }, [textAnn.text, textAnn.fontSize, effectiveWidthNorm, pageWidth, textAnn.fontFamily, textAnn.isBold, isEditing]);
+  }, [textAnn.text, textAnn.fontSize, effectiveWidthNorm, pageWidth, textAnn.fontFamily, textAnn.isBold, isEditing, zoom]);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onUpdate({ ...textAnn, text: e.target.value });
@@ -646,16 +651,24 @@ const TextAnnotationItem: React.FC<{
         </div>
       )}
 
-      {/* Box Inner Layout */}
-      <div className="relative p-1.5 flex items-start gap-1">
+      {/* External Drag Handle Tab (does not push or displace text inside box) */}
+      {(isSelected || !isEditing) && (
         <div
           onPointerDown={onStartDrag}
-          className="p-1 text-gray-400 hover:text-[#0071E3] hover:bg-blue-50 rounded cursor-grab active:cursor-grabbing transition shrink-0 select-none"
+          className={`absolute -top-6 left-0 flex items-center gap-1 px-2 py-0.5 rounded-t-md cursor-grab active:cursor-grabbing transition select-none z-30 text-[11px] font-semibold ${
+            isSelected
+              ? 'bg-[#0071E3] text-white shadow'
+              : 'opacity-0 group-hover:opacity-100 bg-gray-700 text-white shadow-sm'
+          }`}
           title="Gedrückt halten zum Verschieben"
         >
-          <Move size={14} />
+          <Move size={12} />
+          <span>Verschieben</span>
         </div>
+      )}
 
+      {/* Box Inner Layout */}
+      <div className={`relative w-full ${hasBackground ? 'p-1.5' : 'p-0'}`}>
         {isEditing ? (
           <textarea
             ref={textareaRef}
@@ -663,7 +676,7 @@ const TextAnnotationItem: React.FC<{
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
             style={{
-              fontSize: `${textAnn.fontSize}px`,
+              fontSize: `${displayFontSize}px`,
               color: textAnn.color,
               lineHeight: '1.45',
               fontFamily: getFontFamilyCss(textAnn.fontFamily),
@@ -688,32 +701,27 @@ const TextAnnotationItem: React.FC<{
               color: textAnn.color,
               textAlign: align,
             }}
-            className="w-full select-text cursor-text py-0.5 leading-relaxed"
+            className="w-full select-text cursor-text leading-relaxed"
             title="Klicken zum direkten Bearbeiten (Checkboxen können direkt abgehakt werden)"
           >
             {textAnn.text ? (
               textAnn.text.split('\n').map((line, idx) => {
                 const classified = classifyLine(line, textAnn.fontSize);
                 if (classified.type === 'empty') {
-                  return <div key={idx} style={{ height: `${textAnn.fontSize * 0.7}px` }} />;
+                  return <div key={idx} style={{ height: `${displayFontSize * 0.7}px` }} />;
                 }
                 if (classified.type === 'divider') {
-                  return (
-                    <hr
-                      key={idx}
-                      className="my-2 border-t border-gray-300"
-                    />
-                  );
+                  return <hr key={idx} className="my-2 border-t border-gray-300" />;
                 }
                 if (classified.type === 'h1') {
                   return (
                     <h1
                       key={idx}
                       style={{
-                        fontSize: `${classified.fontSize}px`,
+                        fontSize: `${Math.round(classified.fontSize * zoom)}px`,
                         fontWeight: 'bold',
-                        marginTop: idx === 0 ? '0px' : '12px',
-                        marginBottom: '4px',
+                        marginTop: idx === 0 ? '0px' : `${Math.round(10 * zoom)}px`,
+                        marginBottom: `${Math.round(3 * zoom)}px`,
                         lineHeight: '1.25',
                         color: textAnn.color,
                         textAlign: align,
@@ -728,10 +736,10 @@ const TextAnnotationItem: React.FC<{
                     <h2
                       key={idx}
                       style={{
-                        fontSize: `${classified.fontSize}px`,
+                        fontSize: `${Math.round(classified.fontSize * zoom)}px`,
                         fontWeight: 'bold',
-                        marginTop: idx === 0 ? '0px' : '8px',
-                        marginBottom: '3px',
+                        marginTop: idx === 0 ? '0px' : `${Math.round(8 * zoom)}px`,
+                        marginBottom: `${Math.round(2 * zoom)}px`,
                         lineHeight: '1.3',
                         color: textAnn.color,
                         textAlign: align,
@@ -742,16 +750,17 @@ const TextAnnotationItem: React.FC<{
                   );
                 }
                 if (classified.type === 'checklist') {
+                  const checkIconSize = Math.max(10, Math.round(displayFontSize * 0.75));
                   return (
                     <div
                       key={idx}
                       style={{
-                        fontSize: `${textAnn.fontSize}px`,
+                        fontSize: `${displayFontSize}px`,
                         lineHeight: '1.45',
                         display: 'flex',
                         alignItems: 'flex-start',
-                        gap: '7px',
-                        marginTop: '3px',
+                        gap: `${Math.max(4, Math.round(7 * zoom))}px`,
+                        marginTop: `${Math.round(2 * zoom)}px`,
                         textAlign: 'left',
                       }}
                     >
@@ -766,9 +775,9 @@ const TextAnnotationItem: React.FC<{
                         title={classified.checked ? 'Als offen markieren' : 'Abhaken'}
                       >
                         {classified.checked ? (
-                          <CheckSquare size={Math.max(14, textAnn.fontSize)} className="text-emerald-600 fill-emerald-50" />
+                          <CheckSquare size={checkIconSize} className="text-emerald-600 fill-emerald-50" />
                         ) : (
-                          <Square size={Math.max(14, textAnn.fontSize)} className="text-gray-500" />
+                          <Square size={checkIconSize} className="text-gray-500" />
                         )}
                       </button>
                       <span
@@ -787,16 +796,18 @@ const TextAnnotationItem: React.FC<{
                     <div
                       key={idx}
                       style={{
-                        fontSize: `${textAnn.fontSize}px`,
+                        fontSize: `${displayFontSize}px`,
                         lineHeight: '1.4',
                         display: 'flex',
                         alignItems: 'baseline',
-                        gap: '6px',
-                        marginTop: '2px',
+                        gap: `${Math.max(4, Math.round(6 * zoom))}px`,
+                        marginTop: `${Math.round(2 * zoom)}px`,
                         textAlign: 'left',
                       }}
                     >
-                      <span style={{ fontWeight: 'bold', minWidth: '18px' }}>{classified.marker}</span>
+                      <span style={{ fontWeight: 'bold', minWidth: `${Math.round(18 * zoom)}px` }}>
+                        {classified.marker}
+                      </span>
                       <span
                         style={{
                           fontWeight: textAnn.isBold ? 'bold' : 'normal',
@@ -813,16 +824,16 @@ const TextAnnotationItem: React.FC<{
                     <div
                       key={idx}
                       style={{
-                        fontSize: `${textAnn.fontSize}px`,
+                        fontSize: `${displayFontSize}px`,
                         lineHeight: '1.4',
                         display: 'flex',
                         alignItems: 'baseline',
-                        gap: '7px',
-                        marginTop: '2px',
+                        gap: `${Math.max(4, Math.round(7 * zoom))}px`,
+                        marginTop: `${Math.round(2 * zoom)}px`,
                         textAlign: 'left',
                       }}
                     >
-                      <span style={{ fontSize: `${textAnn.fontSize}px`, fontWeight: 'bold' }}>•</span>
+                      <span style={{ fontSize: `${displayFontSize}px`, fontWeight: 'bold' }}>•</span>
                       <span
                         style={{
                           fontWeight: textAnn.isBold ? 'bold' : 'normal',
@@ -838,9 +849,9 @@ const TextAnnotationItem: React.FC<{
                   <p
                     key={idx}
                     style={{
-                      fontSize: `${textAnn.fontSize}px`,
+                      fontSize: `${displayFontSize}px`,
                       lineHeight: '1.4',
-                      marginTop: '2px',
+                      marginTop: `${Math.round(2 * zoom)}px`,
                       fontWeight: textAnn.isBold ? 'bold' : 'normal',
                       fontStyle: textAnn.isItalic ? 'italic' : 'normal',
                       textAlign: align,
@@ -1146,6 +1157,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   pageNumber,
   pageWidth,
   pageHeight,
+  scale,
   annotations,
   onUpdateAnnotation,
   onDeleteAnnotation,
@@ -1413,6 +1425,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
               textAnn={ann as TextAnnotation}
               pageWidth={pageWidth}
               pageHeight={pageHeight}
+              scale={scale}
               isSelected={isSelected}
               onSelect={() => onSelectAnnotation(ann.id)}
               onUpdate={(updated) => onUpdateAnnotation(updated)}

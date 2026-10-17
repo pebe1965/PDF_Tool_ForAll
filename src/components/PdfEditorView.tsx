@@ -1969,6 +1969,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                     pageNumber={currentPage}
                     pageWidth={canvasDimensions.width}
                     pageHeight={canvasDimensions.height}
+                    scale={scale}
                     annotations={annotations}
                     onUpdateAnnotation={handleUpdateAnnotation}
                     onDeleteAnnotation={handleDeleteAnnotation}

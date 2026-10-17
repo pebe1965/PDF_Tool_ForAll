@@ -373,7 +373,8 @@ export async function applyAnnotationsToPdf(
 
         // Convert normalized top-left coordinates to PDF bottom-left coordinates
         const pdfX = ann.x * pageWidth;
-        const boxWidth = ann.width ? ann.width * pageWidth : pageWidth - pdfX;
+        const effectiveWidth = ann.width || 0.35;
+        const boxWidth = Math.min(pageWidth - pdfX, effectiveWidth * pageWidth);
 
         // Process lines and segment by typography (H1, H2, bullet, numbered, checklist, divider, body)
         const rawLines = ann.text.split('\n');
@@ -455,15 +456,16 @@ export async function applyAnnotationsToPdf(
         }
 
         const totalHeight = segments.reduce((sum, s) => sum + s.topGap + s.lineHeight, 0);
-        const pdfY = pageHeight - (ann.y * pageHeight) - 16;
+        const boxTop = pageHeight - (ann.y * pageHeight);
+        const hasBg = !!ann.backgroundColor && ann.backgroundColor !== 'transparent';
+        const bgPad = hasBg ? 6 : 0;
 
         // Draw background rectangle if configured
-        if (ann.backgroundColor && ann.backgroundColor !== 'transparent') {
-          const bgPad = 6;
+        if (hasBg) {
           const isFullPageCover = ann.x <= 0.12 && (ann.width || 0.84) >= 0.8 && ann.y <= 0.12;
-          const rectBottom = isFullPageCover ? 35 : Math.max(0, pdfY - totalHeight);
+          const rectBottom = isFullPageCover ? 35 : Math.max(0, boxTop - totalHeight - bgPad * 2);
           const rectHeight = isFullPageCover
-            ? Math.max(totalHeight + bgPad * 2, pdfY + bgPad - 35)
+            ? Math.max(totalHeight + bgPad * 2, boxTop + bgPad - 35)
             : totalHeight + bgPad * 2;
 
           page.drawRectangle({
@@ -471,15 +473,22 @@ export async function applyAnnotationsToPdf(
             y: rectBottom,
             width: boxWidth + bgPad * 2,
             height: rectHeight,
-            color: hexToRgb(ann.backgroundColor),
+            color: hexToRgb(ann.backgroundColor!),
           });
         }
 
-        let currentY = pdfY;
+        const firstLineSize = segments[0]?.size || baseSize;
+        // In PDF coordinates, page.drawText y is the font baseline.
+        // The ascent of standard fonts (Helvetica/Times/Courier) is ~0.78 * font size.
+        // To place the top edge of the first line exactly at boxTop - bgPad:
+        let currentY = boxTop - bgPad - (firstLineSize * 0.78);
         const align = ann.textAlign || 'left';
 
-        for (const seg of segments) {
-          currentY -= seg.topGap;
+        for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+          const seg = segments[segIdx];
+          if (segIdx > 0) {
+            currentY -= seg.topGap;
+          }
           if (currentY > 30) {
             if (seg.kind === 'divider') {
               const lineY = currentY + seg.size * 0.3;

@@ -45,19 +45,6 @@ export function isHeadingLine(line: string): boolean {
     return true;
   }
 
-  // 5. Standalone title lines without sentence-ending punctuation (no . ! ?)
-  if (
-    trimmed.length >= 3 &&
-    trimmed.length <= 75 &&
-    /^[A-ZÄÖÜ]/.test(trimmed) &&
-    !/[.!?]$/.test(trimmed) &&
-    !/^[•\-\*\[]/.test(trimmed) &&
-    !trimmed.includes(';') &&
-    !trimmed.includes(',')
-  ) {
-    return true;
-  }
-
   return false;
 }
 
