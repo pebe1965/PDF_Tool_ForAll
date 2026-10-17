@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { Header } from './components/Header';
 import { PdfEditorView } from './components/PdfEditorView';
 import { PdfMergeView } from './components/PdfMergeView';
+import { PdfToolsView } from './components/PdfToolsView';
 import { SettingsModal } from './components/SettingsModal';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'editor' | 'merge'>('editor');
+  const [activeTab, setActiveTab] = useState<'editor' | 'merge' | 'tools'>('editor');
   const [sharedPdfBytes, setSharedPdfBytes] = useState<ArrayBuffer | null>(null);
   const [sharedFileName, setSharedFileName] = useState<string>('Dokument.pdf');
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
@@ -17,11 +18,11 @@ export function App() {
     setSharedFileName(fileName);
   };
 
-  // When Merge/Organizer view updates or finishes organizing pages
-  const handleMergeSyncToEditor = (bytes: ArrayBuffer, fileName: string) => {
+  // When Merge/Organizer or Tools view updates or finishes organizing pages
+  const handleSyncToEditor = (bytes: ArrayBuffer, fileName: string) => {
     setSharedPdfBytes(bytes);
     setSharedFileName(fileName);
-    setActiveTab('editor'); // automatically switch to editor
+    setActiveTab('editor');
   };
 
   return (
@@ -36,13 +37,14 @@ export function App() {
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
       <main className="flex-1 overflow-hidden relative">
-        {/* We keep both views mounted and toggle visibility so no user state or uploads are lost! */}
+        {/* Keep views mounted and toggle visibility so no user state or uploads are lost */}
         <div className={`h-full w-full ${activeTab === 'editor' ? 'block' : 'hidden'}`}>
           <PdfEditorView
             sharedPdfBytes={sharedPdfBytes}
             sharedFileName={sharedFileName}
             onPdfUpdate={handleEditorPdfUpdate}
             onOpenMergeTab={() => setActiveTab('merge')}
+            onOpenToolsTab={() => setActiveTab('tools')}
             isAiModalOpen={isAiModalOpen}
             onToggleAiModal={setIsAiModalOpen}
           />
@@ -52,7 +54,15 @@ export function App() {
           <PdfMergeView
             sharedPdfBytes={sharedPdfBytes}
             sharedFileName={sharedFileName}
-            onSyncToEditor={handleMergeSyncToEditor}
+            onSyncToEditor={handleSyncToEditor}
+          />
+        </div>
+
+        <div className={`h-full w-full ${activeTab === 'tools' ? 'block' : 'hidden'}`}>
+          <PdfToolsView
+            sharedPdfBytes={sharedPdfBytes}
+            sharedFileName={sharedFileName}
+            onSyncToEditor={handleSyncToEditor}
           />
         </div>
       </main>

@@ -17,14 +17,45 @@ import {
   FolderOpen,
   Image as ImageIcon,
   Sparkles,
+  Undo2,
+  Redo2,
+  Highlighter,
+  Stamp,
+  ShieldAlert,
+  CheckSquare,
+  Hash,
+  Search,
+  RotateCw,
+  Save,
+  X,
+  Check,
+  Circle,
+  Square,
+  ArrowRight,
+  Pencil,
+  ClipboardList,
+  History,
 } from 'lucide-react';
 import { pdfjsLib } from '../lib/pdfWorker';
 import { AnnotationLayer } from './AnnotationLayer';
 import { SignatureModal } from './SignatureModal';
+import { StampModal } from './StampModal';
+import { FormFillerModal } from './FormFillerModal';
+import { PageDecorationsModal } from './PageDecorationsModal';
 import { GeminiAiModal } from './GeminiAiModal';
-import { formatMarkdownToCleanText } from '../lib/geminiService';
+import { formatMarkdownToCleanText, extractTextFromPdf } from '../lib/geminiService';
 import { paginateDocumentForA4 } from '../lib/a4Pagination';
-import { Annotation, TextAnnotation, SignatureAnnotation, ImageAnnotation } from '../types/pdf';
+import {
+  Annotation,
+  TextAnnotation,
+  SignatureAnnotation,
+  ImageAnnotation,
+  HighlightAnnotation,
+  RedactionAnnotation,
+  ShapeAnnotation,
+  FreehandDrawingAnnotation,
+  PdfFormFieldItem,
+} from '../types/pdf';
 import {
   applyAnnotationsToPdf,
   downloadPdf,
@@ -35,22 +66,41 @@ import {
   deletePageFromPdf,
   processImageFile,
   replacePageWithBlank,
+  rotatePageInPdf,
+  inspectPdfFormFields,
 } from '../lib/pdfEngine';
+import {
+  saveWorkspaceDraft,
+  loadWorkspaceDraft,
+  clearWorkspaceDraft,
+  exportProjectFile,
+  importProjectFile,
+  SavedWorkspaceDraft,
+} from '../lib/projectStorage';
 
 interface PdfEditorViewProps {
   sharedPdfBytes: ArrayBuffer | null;
   sharedFileName: string;
   onPdfUpdate: (bytes: ArrayBuffer, fileName: string) => void;
   onOpenMergeTab?: () => void;
+  onOpenToolsTab?: () => void;
   isAiModalOpen?: boolean;
   onToggleAiModal?: (open: boolean) => void;
 }
+
+type EditorTool =
+  | 'select'
+  | 'add-text'
+  | 'add-highlight'
+  | 'add-redaction'
+  | 'draw-freehand';
 
 export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   sharedPdfBytes,
   sharedFileName,
   onPdfUpdate,
   onOpenMergeTab,
+  onOpenToolsTab,
   isAiModalOpen: externalIsAiModalOpen,
   onToggleAiModal,
 }) => {
@@ -65,10 +115,31 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   const [documentTitle, setDocumentTitle] = useState<string>('Dokument_bearbeitet');
   const lastSyncRef = useRef<ArrayBuffer | null>(null);
 
-  // Tools: 'select' | 'add-text'
-  const [activeTool, setActiveTool] = useState<'select' | 'add-text'>('select');
+  // Active Tool & Modals
+  const [activeTool, setActiveTool] = useState<EditorTool>('select');
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
+  const [isStampModalOpen, setIsStampModalOpen] = useState(false);
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const [isDecorationsModalOpen, setIsDecorationsModalOpen] = useState(false);
+  const [showShapesMenu, setShowShapesMenu] = useState(false);
   const [internalIsAiModalOpen, setInternalIsAiModalOpen] = useState(false);
+
+  // Detected interactive AcroForm fields
+  const [formFields, setFormFields] = useState<PdfFormFieldItem[]>([]);
+
+  // Fulltext Search State
+  const [showSearchBar, setShowSearchBar] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<{ page: number; snippet: string }[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  // Saved draft from IndexedDB
+  const [savedDraft, setSavedDraft] = useState<SavedWorkspaceDraft | null>(null);
+
+  // Freehand drawing state
+  const [isDrawingStroke, setIsDrawingStroke] = useState(false);
+  const [currentStrokePoints, setCurrentStrokePoints] = useState<{ x: number; y: number }[]>([]);
+  const [freehandColor, setFreehandColor] = useState('#0071E3');
 
   const isAiOpen = externalIsAiModalOpen !== undefined ? externalIsAiModalOpen : internalIsAiModalOpen;
   const setAiOpen = (val: boolean) => {
@@ -76,9 +147,44 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     setInternalIsAiModalOpen(val);
   };
 
-  // Annotations list
+  // Annotations list + Undo/Redo History
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [undoStack, setUndoStack] = useState<Annotation[][]>([]);
+  const [redoStack, setRedoStack] = useState<Annotation[][]>([]);
   const [selectedAnnId, setSelectedAnnId] = useState<string | null>(null);
+
+  // Helper to update annotations with undo history
+  const pushAnnotationsChange = useCallback(
+    (updater: Annotation[] | ((prev: Annotation[]) => Annotation[])) => {
+      setAnnotations((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        setUndoStack((u) => [...u.slice(-29), prev]);
+        setRedoStack([]);
+        return next;
+      });
+    },
+    []
+  );
+
+  const handleUndo = useCallback(() => {
+    setUndoStack((prevUndo) => {
+      if (prevUndo.length === 0) return prevUndo;
+      const previousState = prevUndo[prevUndo.length - 1];
+      setRedoStack((prevRedo) => [...prevRedo, annotations]);
+      setAnnotations(previousState);
+      return prevUndo.slice(0, -1);
+    });
+  }, [annotations]);
+
+  const handleRedo = useCallback(() => {
+    setRedoStack((prevRedo) => {
+      if (prevRedo.length === 0) return prevRedo;
+      const nextState = prevRedo[prevRedo.length - 1];
+      setUndoStack((prevUndo) => [...prevUndo, annotations]);
+      setAnnotations(nextState);
+      return prevRedo.slice(0, -1);
+    });
+  }, [annotations]);
 
   // Canvas refs
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -88,8 +194,78 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     height: 0,
   });
 
-  // Reload an updated PDF buffer into pdfjs viewer
-  const reloadPdfFromBuffer = async (buffer: ArrayBuffer | Uint8Array, targetPage: number = 1, notify: boolean = true) => {
+  // Check for saved workspace draft on startup
+  useEffect(() => {
+    loadWorkspaceDraft().then((draft) => {
+      if (draft && draft.pdfBytes && draft.pdfBytes.byteLength > 0) {
+        setSavedDraft(draft);
+      }
+    });
+  }, []);
+
+  // Auto-save current workspace to IndexedDB when annotations or pdfBytes change
+  useEffect(() => {
+    if (!pdfBytes || !file) return;
+    const timer = setTimeout(() => {
+      saveWorkspaceDraft({
+        fileName: file.name,
+        documentTitle,
+        pdfBytes,
+        annotations,
+        currentPage,
+        updatedAt: Date.now(),
+      });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [pdfBytes, annotations, documentTitle, currentPage, file]);
+
+  // Keyboard shortcuts: Cmd+Z (Undo), Cmd+Shift+Z / Cmd+Y (Redo), Cmd+F (Search), Delete/Backspace
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f' && pdfBytes) {
+        e.preventDefault();
+        setShowSearchBar((s) => !s);
+        return;
+      }
+
+      if (isInput) return;
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedAnnId) {
+        e.preventDefault();
+        pushAnnotationsChange((prev) => prev.filter((a) => a.id !== selectedAnnId));
+        setSelectedAnnId(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo, selectedAnnId, pdfBytes, pushAnnotationsChange]);
+
+  // Reload an updated PDF buffer into pdfjs viewer & inspect AcroForm fields
+  const reloadPdfFromBuffer = async (
+    buffer: ArrayBuffer | Uint8Array,
+    targetPage: number = 1,
+    notify: boolean = true
+  ) => {
     setLoading(true);
     try {
       const arrayBuf = buffer instanceof Uint8Array ? (buffer.buffer as ArrayBuffer) : buffer;
@@ -98,7 +274,12 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       setPdfBytes(arrayBuf);
       setPdfDoc(loadedDoc);
       setNumPages(loadedDoc.numPages);
-      setCurrentPage(Math.min(targetPage, loadedDoc.numPages));
+      setCurrentPage(Math.min(Math.max(1, targetPage), loadedDoc.numPages));
+
+      // Check for interactive AcroForm fields
+      inspectPdfFormFields(arrayBuf).then((detected) => {
+        setFormFields(detected);
+      });
 
       if (notify) {
         lastSyncRef.current = arrayBuf;
@@ -111,11 +292,13 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     }
   };
 
-  // Sync when shared document from outside (e.g. merge view) changes
+  // Sync when shared document from outside (e.g. merge or tools view) changes
   useEffect(() => {
     if (sharedPdfBytes && sharedPdfBytes !== lastSyncRef.current && sharedPdfBytes !== pdfBytes) {
       lastSyncRef.current = sharedPdfBytes;
-      const syncFile = new File([sharedPdfBytes as any], sharedFileName || 'Dokument.pdf', { type: 'application/pdf' });
+      const syncFile = new File([sharedPdfBytes as any], sharedFileName || 'Dokument.pdf', {
+        type: 'application/pdf',
+      });
       setFile(syncFile);
       if (sharedFileName) {
         setDocumentTitle(sharedFileName.replace(/\.pdf$/i, ''));
@@ -124,10 +307,31 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     }
   }, [sharedPdfBytes, sharedFileName]);
 
-  // Handle PDF file selection from file input
+  // Handle PDF or .pdftool file selection
   const handleFileChange = async (selectedFile: File) => {
-    if (selectedFile.type !== 'application/pdf') {
-      alert('Bitte wähle eine gültige PDF-Datei aus.');
+    if (selectedFile.name.endsWith('.pdftool')) {
+      setLoading(true);
+      try {
+        const imported = await importProjectFile(selectedFile);
+        const mockFile = new File([imported.pdfBytes as any], imported.fileName, {
+          type: 'application/pdf',
+        });
+        setFile(mockFile);
+        setDocumentTitle(imported.documentTitle);
+        setAnnotations(imported.annotations);
+        setUndoStack([]);
+        setRedoStack([]);
+        await reloadPdfFromBuffer(imported.pdfBytes, imported.currentPage);
+      } catch (err: any) {
+        alert(err?.message || 'Projektdatei konnte nicht geladen werden.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (selectedFile.type !== 'application/pdf' && !selectedFile.name.toLowerCase().endsWith('.pdf')) {
+      alert('Bitte wähle eine gültige PDF-Datei oder .pdftool-Projektdatei aus.');
       return;
     }
 
@@ -138,6 +342,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       const cleanName = selectedFile.name.replace(/\.pdf$/i, '');
       setDocumentTitle(cleanName.endsWith('_bearbeitet') ? cleanName : `${cleanName}_bearbeitet`);
       setAnnotations([]);
+      setUndoStack([]);
+      setRedoStack([]);
       await reloadPdfFromBuffer(buffer, 1);
     } catch (err) {
       console.error('Fehler beim Laden der PDF:', err);
@@ -147,15 +353,33 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     }
   };
 
+  // Restore saved IndexedDB draft
+  const handleRestoreDraft = async () => {
+    if (!savedDraft) return;
+    const mockFile = new File([savedDraft.pdfBytes as any], savedDraft.fileName || 'Dokument.pdf', {
+      type: 'application/pdf',
+    });
+    setFile(mockFile);
+    setDocumentTitle(savedDraft.documentTitle || 'Dokument_bearbeitet');
+    setAnnotations(savedDraft.annotations || []);
+    setUndoStack([]);
+    setRedoStack([]);
+    await reloadPdfFromBuffer(savedDraft.pdfBytes, savedDraft.currentPage || 1);
+  };
+
   // Create a brand new blank PDF from scratch
   const handleCreateNewBlankPdf = async () => {
     setLoading(true);
     try {
       const blankBytes = await createBlankPdfDocument();
-      const mockFile = new File([blankBytes as any], 'Neues_Dokument.pdf', { type: 'application/pdf' });
+      const mockFile = new File([blankBytes as any], 'Neues_Dokument.pdf', {
+        type: 'application/pdf',
+      });
       setFile(mockFile);
       setDocumentTitle('Neues_Dokument');
       setAnnotations([]);
+      setUndoStack([]);
+      setRedoStack([]);
       await reloadPdfFromBuffer(blankBytes, 1);
     } catch (err) {
       console.error('Fehler beim Erstellen eines neuen PDFs:', err);
@@ -176,6 +400,20 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     } catch (err) {
       console.error('Fehler beim Hinzufügen einer leeren Seite:', err);
       alert('Leere Seite konnte nicht hinzugefügt werden.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Rotate current or specific page 90 degrees
+  const handleRotatePage = async (pageToRotate: number) => {
+    if (!pdfBytes) return;
+    setLoading(true);
+    try {
+      const updatedBytes = await rotatePageInPdf(pdfBytes, pageToRotate - 1, 90);
+      await reloadPdfFromBuffer(updatedBytes, pageToRotate);
+    } catch (err) {
+      console.error('Fehler beim Drehen der Seite:', err);
     } finally {
       setLoading(false);
     }
@@ -211,8 +449,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     try {
       const updatedBytes = await deletePageFromPdf(pdfBytes, pageToDelete - 1);
 
-      // Adjust annotations
-      setAnnotations((prev) =>
+      pushAnnotationsChange((prev) =>
         prev
           .filter((a) => a.pageNumber !== pageToDelete)
           .map((a) => (a.pageNumber > pageToDelete ? { ...a, pageNumber: a.pageNumber - 1 } : a))
@@ -225,6 +462,40 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       alert('Seite konnte nicht gelöscht werden.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fulltext Search across all pages
+  const handleRunSearch = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!pdfBytes || !searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const { pageTexts } = await extractTextFromPdf(pdfBytes, undefined, annotations);
+      const q = searchQuery.trim().toLowerCase();
+      const matches: { page: number; snippet: string }[] = [];
+
+      for (const pt of pageTexts) {
+        const idx = pt.text.toLowerCase().indexOf(q);
+        if (idx !== -1) {
+          const start = Math.max(0, idx - 35);
+          const end = Math.min(pt.text.length, idx + q.length + 55);
+          const snippet =
+            (start > 0 ? '…' : '') + pt.text.slice(start, end) + (end < pt.text.length ? '…' : '');
+          matches.push({ page: pt.page, snippet });
+        }
+      }
+      setSearchResults(matches);
+      if (matches.length > 0) {
+        setCurrentPage(matches[0].page);
+      }
+    } catch (err) {
+      console.error('Suche fehlgeschlagen:', err);
+    } finally {
+      setSearching(false);
     }
   };
 
@@ -267,44 +538,148 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     renderCurrentPage();
   }, [renderCurrentPage]);
 
-  // Handle click on PDF to add text
+  // Handle click on PDF to place Text, Highlight, or Redaction
   const handlePageClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (activeTool !== 'add-text' || !pageContainerRef.current) return;
+    if (
+      activeTool === 'select' ||
+      activeTool === 'draw-freehand' ||
+      !pageContainerRef.current ||
+      canvasDimensions.width <= 0
+    ) {
+      return;
+    }
 
     const rect = pageContainerRef.current.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
 
-    const normX = Math.max(0.02, Math.min(0.68, clickX / canvasDimensions.width));
-    const normY = Math.max(0.02, Math.min(0.9, clickY / canvasDimensions.height));
+    const normX = Math.max(0.02, Math.min(0.75, clickX / canvasDimensions.width));
+    const normY = Math.max(0.02, Math.min(0.92, clickY / canvasDimensions.height));
 
-    const newTextAnn: TextAnnotation = {
-      id: `text_${Date.now()}`,
-      type: 'text',
-      pageNumber: currentPage,
-      x: normX,
-      y: normY,
-      width: 0.32,
-      text: 'Hier tippen...',
-      fontSize: 14,
-      color: '#000000',
-      backgroundColor: 'transparent',
-    };
-
-    setAnnotations((prev) => [...prev, newTextAnn]);
-    setSelectedAnnId(newTextAnn.id);
-    setActiveTool('select');
+    if (activeTool === 'add-text') {
+      const newTextAnn: TextAnnotation = {
+        id: `text_${Date.now()}`,
+        type: 'text',
+        pageNumber: currentPage,
+        x: normX,
+        y: normY,
+        width: 0.32,
+        text: 'Hier tippen...',
+        fontSize: 14,
+        color: '#000000',
+        backgroundColor: 'transparent',
+      };
+      pushAnnotationsChange((prev) => [...prev, newTextAnn]);
+      setSelectedAnnId(newTextAnn.id);
+      setActiveTool('select');
+    } else if (activeTool === 'add-highlight') {
+      const newHl: HighlightAnnotation = {
+        id: `hl_${Date.now()}`,
+        type: 'highlight',
+        pageNumber: currentPage,
+        x: normX,
+        y: Math.max(0.01, normY - 0.012),
+        width: 0.28,
+        height: 0.028,
+        color: '#FACC15',
+      };
+      pushAnnotationsChange((prev) => [...prev, newHl]);
+      setSelectedAnnId(newHl.id);
+      setActiveTool('select');
+    } else if (activeTool === 'add-redaction') {
+      const newRed: RedactionAnnotation = {
+        id: `red_${Date.now()}`,
+        type: 'redaction',
+        pageNumber: currentPage,
+        x: normX,
+        y: Math.max(0.01, normY - 0.015),
+        width: 0.25,
+        height: 0.032,
+        label: 'DSGVO',
+      };
+      pushAnnotationsChange((prev) => [...prev, newRed]);
+      setSelectedAnnId(newRed.id);
+      setActiveTool('select');
+    }
   };
 
-  // Duplicate an existing annotation (text or image)
-  const handleDuplicateAnnotation = (ann: TextAnnotation | ImageAnnotation) => {
+  // Freehand drawing pointer handlers on page container
+  const handlePagePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activeTool !== 'draw-freehand' || !pageContainerRef.current || canvasDimensions.width <= 0) {
+      return;
+    }
+    e.preventDefault();
+    const rect = pageContainerRef.current.getBoundingClientRect();
+    const pt = {
+      x: Math.max(0, Math.min(1, (e.clientX - rect.left) / canvasDimensions.width)),
+      y: Math.max(0, Math.min(1, (e.clientY - rect.top) / canvasDimensions.height)),
+    };
+    setIsDrawingStroke(true);
+    setCurrentStrokePoints([pt]);
+  };
+
+  const handlePagePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDrawingStroke || activeTool !== 'draw-freehand' || !pageContainerRef.current) return;
+    e.preventDefault();
+    const rect = pageContainerRef.current.getBoundingClientRect();
+    const pt = {
+      x: Math.max(0, Math.min(1, (e.clientX - rect.left) / canvasDimensions.width)),
+      y: Math.max(0, Math.min(1, (e.clientY - rect.top) / canvasDimensions.height)),
+    };
+    setCurrentStrokePoints((prev) => [...prev, pt]);
+  };
+
+  const handlePagePointerUp = () => {
+    if (!isDrawingStroke || activeTool !== 'draw-freehand') return;
+    setIsDrawingStroke(false);
+    if (currentStrokePoints.length > 1) {
+      const newDrawing: FreehandDrawingAnnotation = {
+        id: `draw_${Date.now()}`,
+        type: 'drawing',
+        pageNumber: currentPage,
+        points: currentStrokePoints,
+        color: freehandColor,
+        strokeWidth: 2.5,
+      };
+      pushAnnotationsChange((prev) => [...prev, newDrawing]);
+      setSelectedAnnId(newDrawing.id);
+    }
+    setCurrentStrokePoints([]);
+  };
+
+  // Insert quick shape or symbol (Checkmark, Cross, Rect, Circle, Arrow)
+  const handleInsertShape = (
+    shapeType: 'check' | 'cross' | 'rect' | 'circle' | 'arrow',
+    defaultColor: string
+  ) => {
+    const isSymbol = shapeType === 'check' || shapeType === 'cross';
+    const newShape: ShapeAnnotation = {
+      id: `shape_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+      type: 'shape',
+      pageNumber: currentPage,
+      shapeType,
+      x: 0.42,
+      y: 0.42,
+      width: isSymbol ? 0.045 : 0.18,
+      height: isSymbol ? 0.032 : shapeType === 'arrow' ? 0.04 : 0.08,
+      color: defaultColor,
+      strokeWidth: 3,
+    };
+    pushAnnotationsChange((prev) => [...prev, newShape]);
+    setSelectedAnnId(newShape.id);
+    setShowShapesMenu(false);
+  };
+
+  // Duplicate an existing annotation
+  const handleDuplicateAnnotation = (ann: Annotation) => {
+    if (ann.type === 'drawing') return;
     const copy = {
       ...ann,
       id: `${ann.type}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       x: Math.min(0.92, ann.x + 0.03),
       y: Math.min(0.92, ann.y + 0.03),
     };
-    setAnnotations((prev) => [...prev, copy as any]);
+    pushAnnotationsChange((prev) => [...prev, copy as Annotation]);
     setSelectedAnnId(copy.id);
   };
 
@@ -317,7 +692,6 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     try {
       const { dataUrl, aspectRatio } = await processImageFile(fileOrBlob);
 
-      // Target initial width ~28% of page so it is easy to place and resize
       let initialWidth = 0.28;
       const pageAspect =
         canvasDimensions.width > 0 && canvasDimensions.height > 0
@@ -326,19 +700,16 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
       let initialHeight = (initialWidth * pageAspect) / aspectRatio;
 
-      // If image is very tall (e.g. vertical screenshot), cap height to 30%
       if (initialHeight > 0.3) {
         initialHeight = 0.3;
         initialWidth = (initialHeight / pageAspect) * aspectRatio;
       }
 
-      // If image is very wide, cap width to 45%
       if (initialWidth > 0.45) {
         initialWidth = 0.45;
         initialHeight = (initialWidth * pageAspect) / aspectRatio;
       }
 
-      // Position
       let initialX = coords ? coords.x - initialWidth / 2 : (1 - initialWidth) / 2;
       let initialY = coords ? coords.y - initialHeight / 2 : 0.25;
 
@@ -359,7 +730,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         name: fileName,
       };
 
-      setAnnotations((prev) => [...prev, newImgAnn]);
+      pushAnnotationsChange((prev) => [...prev, newImgAnn]);
       setSelectedAnnId(newImgAnn.id);
     } catch (err) {
       console.error('Fehler beim Einfügen des Bildes:', err);
@@ -367,10 +738,36 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     }
   };
 
+  // Insert Stamp from StampModal
+  const handleAddStamp = (dataUrl: string, aspectRatio: number, label: string) => {
+    const pageAspect =
+      canvasDimensions.width > 0 && canvasDimensions.height > 0
+        ? canvasDimensions.width / canvasDimensions.height
+        : 0.707;
+    const width = 0.26;
+    const height = (width * pageAspect) / aspectRatio;
+
+    const stampAnn: ImageAnnotation = {
+      id: `stamp_${Date.now()}`,
+      type: 'image',
+      pageNumber: currentPage,
+      x: 0.62,
+      y: 0.12,
+      width,
+      height,
+      dataUrl,
+      aspectRatio,
+      lockAspectRatio: true,
+      name: `Stempel: ${label}`,
+    };
+
+    pushAnnotationsChange((prev) => [...prev, stampAnn]);
+    setSelectedAnnId(stampAnn.id);
+  };
+
   // Clipboard paste listener (Cmd+V / Ctrl+V for screenshots)
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
-      // Don't intercept when user is typing in a textarea or input
       const target = e.target as HTMLElement;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
         return;
@@ -408,11 +805,11 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       dataUrl: dataUrl,
     };
 
-    setAnnotations((prev) => [...prev, newSigAnn]);
+    pushAnnotationsChange((prev) => [...prev, newSigAnn]);
     setSelectedAnnId(newSigAnn.id);
   };
 
-  // Insert AI generated text into current page (with 14px typography and auto-continuation if multi-page)
+  // Insert AI generated text into current page
   const handleInsertTextFromAi = async (text: string) => {
     const cleanText = formatMarkdownToCleanText(text);
     const pages = paginateDocumentForA4(cleanText, 14);
@@ -431,17 +828,15 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         backgroundColor: '#FFFFFF',
       };
 
-      setAnnotations((prev) => [...prev, newTextAnn]);
+      pushAnnotationsChange((prev) => [...prev, newTextAnn]);
       setSelectedAnnId(newTextAnn.id);
       setAiOpen(false);
       return;
     }
 
-    // If text exceeds 1 A4 page, place page 1 on current page and insert continuation pages directly after currentPage
     setLoading(true);
     try {
       const additionalCount = pages.length - 1;
-      // Insert blank pages directly after currentPage (0-indexed afterIndex: currentPage - 1)
       const updatedBytes = await addMultipleBlankPagesToPdf(
         pdfBytes,
         additionalCount,
@@ -475,8 +870,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         backgroundColor: 'transparent',
       }));
 
-      // Shift existing annotations on pages > currentPage by additionalCount
-      setAnnotations((prev) => [
+      pushAnnotationsChange((prev) => [
         ...prev.map((a) =>
           a.pageNumber > currentPage ? { ...a, pageNumber: a.pageNumber + additionalCount } : a
         ),
@@ -493,7 +887,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     }
   };
 
-  // Replace current page with clean AI generated text (replaces the page with a clean blank page so no old text remains underneath)
+  // Replace current page with clean AI generated text
   const handleReplaceCurrentPageWithAiText = async (text: string) => {
     if (!pdfBytes) return;
     const cleanText = formatMarkdownToCleanText(text);
@@ -502,7 +896,6 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
     setLoading(true);
     try {
-      // Cleanly replace currentPage with a fresh blank page and insert any continuation pages directly after it
       const updatedBytes = await replacePageWithBlank(
         pdfBytes,
         currentPage - 1,
@@ -537,8 +930,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         backgroundColor: 'transparent',
       }));
 
-      // Remove existing annotations on currentPage and shift annotations on subsequent pages by additionalCount
-      setAnnotations((prev) => [
+      pushAnnotationsChange((prev) => [
         ...prev
           .filter((a) => a.pageNumber !== currentPage)
           .map((a) =>
@@ -558,7 +950,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     }
   };
 
-  // Insert AI generated text as new dedicated A4 page(s) (with A4 pagination at 14px)
+  // Insert AI generated text as new dedicated A4 page(s)
   const handleInsertAsNewPageFromAi = async (text: string) => {
     if (!pdfBytes) return;
     setLoading(true);
@@ -584,7 +976,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         backgroundColor: 'transparent',
       }));
 
-      setAnnotations((prev) => [...prev, ...newAnnotations]);
+      pushAnnotationsChange((prev) => [...prev, ...newAnnotations]);
       if (newAnnotations.length > 0) {
         setSelectedAnnId(newAnnotations[0].id);
       }
@@ -604,11 +996,11 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
   // Delete annotation
   const handleDeleteAnnotation = (id: string) => {
-    setAnnotations((prev) => prev.filter((a) => a.id !== id));
+    pushAnnotationsChange((prev) => prev.filter((a) => a.id !== id));
     if (selectedAnnId === id) setSelectedAnnId(null);
   };
 
-  // Export & Download
+  // Export & Download final PDF
   const handleExport = async () => {
     if (!pdfBytes) return;
     setExporting(true);
@@ -625,7 +1017,19 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     }
   };
 
-  // Dropzone drag events for initial screen
+  // Save editable .pdftool project file
+  const handleExportProject = () => {
+    if (!pdfBytes) return;
+    exportProjectFile(
+      pdfBytes,
+      annotations,
+      file?.name || 'Dokument.pdf',
+      documentTitle,
+      currentPage
+    );
+  };
+
+  // Dropzone drag events
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
   };
@@ -638,7 +1042,6 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     }
   };
 
-  // Viewport drag/drop handler (supports dropping image files onto the PDF page)
   const handleViewportDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const droppedFile = e.dataTransfer.files[0];
@@ -653,38 +1056,73 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       } else {
         handleInsertImageFile(droppedFile, droppedFile.name);
       }
-    } else if (droppedFile.type === 'application/pdf') {
+    } else if (droppedFile.type === 'application/pdf' || droppedFile.name.endsWith('.pdftool')) {
       handleFileChange(droppedFile);
     }
   };
 
   return (
     <div className="flex flex-col h-[calc(100vh-68px)] overflow-hidden bg-[#F5F5F7]">
-      {/* If no file is loaded, show welcoming choices */}
       {!file ? (
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="w-full max-w-3xl grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Card 1: Open existing PDF */}
+        <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
+          {/* Resume Saved Draft Banner */}
+          {savedDraft && (
+            <div className="w-full max-w-4xl mb-6 p-4 bg-white border border-blue-200 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0071E3] flex items-center justify-center shrink-0">
+                  <History size={20} />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-gray-900">
+                    Letztes Arbeitsdokument fortsetzen: „{savedDraft.documentTitle}.pdf“
+                  </div>
+                  <div className="text-[11px] text-gray-500">
+                    Automatisch gespeichert ({savedDraft.annotations?.length || 0} bearbeitbare Elemente, Seite {savedDraft.currentPage})
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    clearWorkspaceDraft();
+                    setSavedDraft(null);
+                  }}
+                  className="px-3 py-1.5 rounded-xl text-xs text-gray-500 hover:bg-gray-100 transition"
+                >
+                  Verwerfen
+                </button>
+                <button
+                  onClick={handleRestoreDraft}
+                  className="px-4 py-1.5 rounded-xl bg-[#0071E3] hover:bg-[#0077ED] text-white text-xs font-semibold shadow-sm transition"
+                >
+                  Jetzt weiterbearbeiten
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Card 1: Open existing PDF or .pdftool Project */}
             <div
               onDragOver={handleDragOver}
               onDrop={handleDrop}
               onClick={() => document.getElementById('file-upload-editor')?.click()}
-              className="p-8 bg-white rounded-3xl border-2 border-dashed border-[#D2D2D7] hover:border-[#0071E3] transition-all flex flex-col items-center text-center shadow-lg group cursor-pointer"
+              className="p-7 bg-white rounded-3xl border-2 border-dashed border-[#D2D2D7] hover:border-[#0071E3] transition-all flex flex-col items-center text-center shadow-lg group cursor-pointer"
             >
-              <div className="w-16 h-16 rounded-2xl bg-[#0071E3]/10 text-[#0071E3] flex items-center justify-center mb-5 group-hover:scale-105 transition">
-                <Upload size={32} />
+              <div className="w-14 h-14 rounded-2xl bg-[#0071E3]/10 text-[#0071E3] flex items-center justify-center mb-4 group-hover:scale-105 transition">
+                <Upload size={28} />
               </div>
-              <h2 className="text-xl font-bold text-[#1D1D1F] mb-2">Vorhandene PDF öffnen</h2>
-              <p className="text-xs text-[#86868B] mb-6 flex-1">
-                Wähle eine PDF aus oder ziehe sie hierhin, um Text zu ergänzen, zu unterschreiben oder Seiten anzupassen.
+              <h2 className="text-lg font-bold text-[#1D1D1F] mb-2">PDF oder Projekt öffnen</h2>
+              <p className="text-xs text-[#86868B] mb-5 flex-1">
+                PDF-Datei oder gespeicherte <code className="font-mono">.pdftool</code>-Projektdatei reinziehen, um zu bearbeiten, zu stempeln, zu schwärzen oder zu signieren.
               </p>
-              <span className="w-full py-2.5 bg-[#0071E3] hover:bg-[#0077ED] text-white text-sm font-semibold rounded-xl shadow-md transition text-center">
-                PDF-Datei auswählen
+              <span className="w-full py-2.5 bg-[#0071E3] hover:bg-[#0077ED] text-white text-xs font-semibold rounded-xl shadow-md transition text-center">
+                PDF / Projekt auswählen
               </span>
               <input
                 id="file-upload-editor"
                 type="file"
-                accept="application/pdf"
+                accept="application/pdf,.pdf,.pdftool"
                 className="hidden"
                 onChange={(e) => {
                   if (e.target.files?.[0]) handleFileChange(e.target.files[0]);
@@ -695,17 +1133,34 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
             {/* Card 2: Create new blank PDF */}
             <div
               onClick={handleCreateNewBlankPdf}
-              className="p-8 bg-white rounded-3xl border-2 border-dashed border-[#D2D2D7] hover:border-emerald-500 transition-all flex flex-col items-center text-center shadow-lg group cursor-pointer"
+              className="p-7 bg-white rounded-3xl border-2 border-dashed border-[#D2D2D7] hover:border-emerald-500 transition-all flex flex-col items-center text-center shadow-lg group cursor-pointer"
             >
-              <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-5 group-hover:scale-105 transition">
-                <FilePlus size={32} />
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-4 group-hover:scale-105 transition">
+                <FilePlus size={28} />
               </div>
-              <h2 className="text-xl font-bold text-[#1D1D1F] mb-2">Neues leeres PDF erstellen</h2>
-              <p className="text-xs text-[#86868B] mb-6 flex-1">
-                Erstelle ein leeres A4-Dokument von Grund auf. Ideal für Notizen, Briefe, Protokolle oder eigene Formulare.
+              <h2 className="text-lg font-bold text-[#1D1D1F] mb-2">Leeres A4-Dokument</h2>
+              <p className="text-xs text-[#86868B] mb-5 flex-1">
+                Erstelle ein leeres DIN-A4-PDF von Grund auf – ideal für Briefe, Angebote, Protokolle oder KI-generierte Vertragsvorlagen.
               </p>
-              <span className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl shadow-md transition text-center">
-                Leeres Dokument anlegen
+              <span className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-md transition text-center">
+                Leeres PDF anlegen
+              </span>
+            </div>
+
+            {/* Card 3: Business Tools Shortcut */}
+            <div
+              onClick={onOpenToolsTab}
+              className="p-7 bg-white rounded-3xl border-2 border-dashed border-[#D2D2D7] hover:border-purple-500 transition-all flex flex-col items-center text-center shadow-lg group cursor-pointer"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-purple-500/10 text-purple-600 flex items-center justify-center mb-4 group-hover:scale-105 transition">
+                <Sparkles size={28} />
+              </div>
+              <h2 className="text-lg font-bold text-[#1D1D1F] mb-2">Firmen-Werkzeuge</h2>
+              <p className="text-xs text-[#86868B] mb-5 flex-1">
+                PDFs teilen, Dateigröße komprimieren, ZUGFeRD/XRechnung prüfen, Verträge vergleichen (Diff) oder Bilder konvertieren.
+              </p>
+              <span className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-xl shadow-md transition text-center">
+                Zu den Werkzeugen
               </span>
             </div>
           </div>
@@ -713,37 +1168,174 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       ) : (
         <>
           {/* Top Action & Tool Bar */}
-          <div className="h-14 bg-white border-b border-[#E8E8ED] px-4 flex items-center justify-between shadow-sm z-20">
-            {/* Left: Tools */}
-            <div className="flex items-center gap-2">
+          <div className="min-h-[56px] bg-white border-b border-[#E8E8ED] px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 shadow-sm z-20">
+            {/* Left: Annotation & Office Tools */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {/* Undo / Redo */}
+              <div className="flex items-center bg-[#F5F5F7] rounded-xl p-0.5 mr-0.5">
+                <button
+                  onClick={handleUndo}
+                  disabled={undoStack.length === 0}
+                  className="p-1.5 rounded-lg hover:bg-white disabled:opacity-30 text-gray-700 transition"
+                  title="Rückgängig (Cmd+Z / Strg+Z)"
+                >
+                  <Undo2 size={15} />
+                </button>
+                <button
+                  onClick={handleRedo}
+                  disabled={redoStack.length === 0}
+                  className="p-1.5 rounded-lg hover:bg-white disabled:opacity-30 text-gray-700 transition"
+                  title="Wiederholen (Cmd+Shift+Z)"
+                >
+                  <Redo2 size={15} />
+                </button>
+              </div>
+
+              {/* Add Text */}
               <button
                 onClick={() => setActiveTool(activeTool === 'add-text' ? 'select' : 'add-text')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium transition ${
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition ${
                   activeTool === 'add-text'
                     ? 'bg-[#0071E3] text-white shadow-sm'
                     : 'bg-[#F5F5F7] text-[#1D1D1F] hover:bg-gray-200'
                 }`}
-                title="Klicke auf die PDF-Seite, um Text zu platzieren"
+                title="Klicke auf die PDF-Seite, um ein Textfeld zu platzieren"
               >
-                <Type size={16} />
-                <span>Text hinzufügen</span>
+                <Type size={14} />
+                <span>Text</span>
               </button>
 
+              {/* Highlighter */}
+              <button
+                onClick={() =>
+                  setActiveTool(activeTool === 'add-highlight' ? 'select' : 'add-highlight')
+                }
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition ${
+                  activeTool === 'add-highlight'
+                    ? 'bg-amber-400 text-amber-950 shadow-sm'
+                    : 'bg-[#F5F5F7] text-[#1D1D1F] hover:bg-amber-100'
+                }`}
+                title="Textmarker auf der Seite platzieren"
+              >
+                <Highlighter size={14} />
+                <span>Marker</span>
+              </button>
+
+              {/* Shapes & Symbols Dropdown (Check, Cross, Rect, Circle, Arrow, Freehand) */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowShapesMenu((s) => !s)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition ${
+                    activeTool === 'draw-freehand' || showShapesMenu
+                      ? 'bg-[#0071E3] text-white shadow-sm'
+                      : 'bg-[#F5F5F7] text-[#1D1D1F] hover:bg-gray-200'
+                  }`}
+                  title="Häkchen, Kreuz, Rahmen, Pfeil oder Freihand-Stift"
+                >
+                  <CheckSquare size={14} />
+                  <span>Symbole & Formen</span>
+                </button>
+
+                {showShapesMenu && (
+                  <div
+                    className="absolute left-0 top-10 w-56 bg-white rounded-2xl shadow-2xl border border-gray-200 p-2 z-40 space-y-1 text-xs"
+                    onMouseLeave={() => setShowShapesMenu(false)}
+                  >
+                    <button
+                      onClick={() => handleInsertShape('check', '#107C41')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-emerald-50 text-gray-800 font-semibold transition"
+                    >
+                      <Check size={15} className="text-emerald-600 stroke-[3]" />
+                      <span>Häkchen (✓ Grün)</span>
+                    </button>
+                    <button
+                      onClick={() => handleInsertShape('cross', '#E02020')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-red-50 text-gray-800 font-semibold transition"
+                    >
+                      <X size={15} className="text-red-600 stroke-[3]" />
+                      <span>Kreuzchen (✗ Rot)</span>
+                    </button>
+                    <button
+                      onClick={() => handleInsertShape('rect', '#E02020')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-gray-100 text-gray-800 font-medium transition"
+                    >
+                      <Square size={14} className="text-red-600" />
+                      <span>Rahmen / Kasten</span>
+                    </button>
+                    <button
+                      onClick={() => handleInsertShape('circle', '#E02020')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-gray-100 text-gray-800 font-medium transition"
+                    >
+                      <Circle size={14} className="text-red-600" />
+                      <span>Kreis / Markierung</span>
+                    </button>
+                    <button
+                      onClick={() => handleInsertShape('arrow', '#0071E3')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-gray-100 text-gray-800 font-medium transition"
+                    >
+                      <ArrowRight size={14} className="text-[#0071E3]" />
+                      <span>Pfeil</span>
+                    </button>
+                    <div className="border-t border-gray-100 my-1" />
+                    <button
+                      onClick={() => {
+                        setActiveTool(
+                          activeTool === 'draw-freehand' ? 'select' : 'draw-freehand'
+                        );
+                        setShowShapesMenu(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-blue-50 text-[#0071E3] font-semibold transition"
+                    >
+                      <Pencil size={14} />
+                      <span>Freihand-Stift zeichnen</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Company & Status Stamp */}
+              <button
+                onClick={() => setIsStampModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#F5F5F7] hover:bg-emerald-50 hover:text-emerald-700 text-[#1D1D1F] rounded-xl text-xs font-semibold transition"
+                title="Firmenstempel (FREIGEGEBEN, BEZAHLT, GEPRÜFT, VERTRAULICH) mit Datum einfügen"
+              >
+                <Stamp size={14} />
+                <span>Stempel</span>
+              </button>
+
+              {/* DSGVO Redaction (Blackout) */}
+              <button
+                onClick={() =>
+                  setActiveTool(activeTool === 'add-redaction' ? 'select' : 'add-redaction')
+                }
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition ${
+                  activeTool === 'add-redaction'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'bg-[#F5F5F7] text-[#1D1D1F] hover:bg-red-50 hover:text-red-700'
+                }`}
+                title="DSGVO-Schwärzung: Sensible Daten unwiderruflich schwärzen"
+              >
+                <ShieldAlert size={14} />
+                <span>Schwärzen</span>
+              </button>
+
+              {/* Signature */}
               <button
                 onClick={() => setIsSignatureModalOpen(true)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-[#F5F5F7] hover:bg-gray-200 text-[#1D1D1F] rounded-xl text-sm font-medium transition"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#F5F5F7] hover:bg-gray-200 text-[#1D1D1F] rounded-xl text-xs font-semibold transition"
               >
-                <PenTool size={16} />
-                <span>Unterschreiben</span>
+                <PenTool size={14} />
+                <span>Signatur</span>
               </button>
 
+              {/* Image / Screenshot */}
               <button
                 onClick={() => document.getElementById('image-upload-editor')?.click()}
-                className="flex items-center gap-2 px-3 py-1.5 bg-[#F5F5F7] hover:bg-gray-200 text-[#1D1D1F] rounded-xl text-sm font-medium transition"
-                title="Bild oder Screenshot einfügen (oder direkt Strg+V / Cmd+V drücken)"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#F5F5F7] hover:bg-gray-200 text-[#1D1D1F] rounded-xl text-xs font-semibold transition"
+                title="Bild oder Screenshot einfügen (oder direkt Cmd+V / Strg+V drücken)"
               >
-                <ImageIcon size={16} />
-                <span>Bild / Screenshot</span>
+                <ImageIcon size={14} />
+                <span className="hidden xl:inline">Bild</span>
               </button>
               <input
                 id="image-upload-editor"
@@ -758,31 +1350,67 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                 }}
               />
 
+              {/* Page Numbers & Watermark */}
+              <button
+                onClick={() => setIsDecorationsModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#F5F5F7] hover:bg-indigo-50 hover:text-indigo-700 text-[#1D1D1F] rounded-xl text-xs font-semibold transition"
+                title="Seitenzahlen, Kopf-/Fußzeile oder Wasserzeichen auf alle Seiten anwenden"
+              >
+                <Hash size={14} />
+                <span className="hidden 2xl:inline">Seitenzahlen</span>
+              </button>
+
+              {/* Interactive Form Fields button (highlighted when PDF has AcroForms) */}
+              {formFields.length > 0 && (
+                <button
+                  onClick={() => setIsFormModalOpen(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-xl text-xs font-bold transition shadow-sm"
+                  title="Erkannte PDF-Formularfelder ausfüllen & schreibschützen"
+                >
+                  <ClipboardList size={14} />
+                  <span>Formular ({formFields.length})</span>
+                </button>
+              )}
+
+              {/* Search Toggle */}
+              <button
+                onClick={() => setShowSearchBar((s) => !s)}
+                className={`p-1.5 rounded-xl text-xs transition ${
+                  showSearchBar
+                    ? 'bg-[#0071E3] text-white'
+                    : 'bg-[#F5F5F7] text-gray-700 hover:bg-gray-200'
+                }`}
+                title="Volltextsuche im Dokument (Cmd+F / Strg+F)"
+              >
+                <Search size={15} />
+              </button>
+
               <div className="w-[1px] h-4 bg-gray-200 mx-0.5" />
 
+              {/* Gemini AI */}
               <button
                 onClick={() => setAiOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-indigo-500/20 transition hover:scale-105 active:scale-95"
-                title="Mit Gemini KI analysieren, zusammenfassen, übersetzen oder Text erstellen"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-500/20 transition"
+                title="Mit Gemini KI analysieren, Rechnungen nach Excel exportieren, übersetzen oder korrigieren"
               >
-                <Sparkles size={15} className="animate-pulse" />
-                <span>Gemini KI</span>
+                <Sparkles size={14} className="animate-pulse" />
+                <span>KI</span>
               </button>
             </div>
 
             {/* Middle: Page & Zoom Controls */}
-            <div className="flex items-center gap-4 bg-[#F5F5F7] px-3 py-1 rounded-xl">
-              <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2.5 bg-[#F5F5F7] px-2.5 py-1 rounded-xl">
+              <div className="flex items-center gap-0.5">
                 <button
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage <= 1}
                   className="p-1 rounded hover:bg-white disabled:opacity-30 transition"
                   title="Vorherige Seite"
                 >
-                  <ChevronLeft size={18} />
+                  <ChevronLeft size={16} />
                 </button>
-                <span className="text-xs font-semibold px-2">
-                  Seite {currentPage} von {numPages}
+                <span className="text-xs font-semibold px-1.5 whitespace-nowrap">
+                  {currentPage} / {numPages}
                 </span>
                 <button
                   onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
@@ -790,82 +1418,164 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                   className="p-1 rounded hover:bg-white disabled:opacity-30 transition"
                   title="Nächste Seite"
                 >
-                  <ChevronRight size={18} />
+                  <ChevronRight size={16} />
                 </button>
               </div>
 
-              <div className="w-[1px] h-4 bg-gray-300" />
+              <div className="w-[1px] h-3.5 bg-gray-300" />
 
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5">
                 <button
                   onClick={() => setScale((s) => Math.max(0.6, s - 0.2))}
                   className="p-1 rounded hover:bg-white transition"
                   title="Verkleinern"
                 >
-                  <ZoomOut size={16} />
+                  <ZoomOut size={15} />
                 </button>
-                <span className="text-xs font-mono w-10 text-center">{Math.round(scale * 100)}%</span>
+                <span className="text-[11px] font-mono w-9 text-center">
+                  {Math.round(scale * 100)}%
+                </span>
                 <button
                   onClick={() => setScale((s) => Math.min(2.5, s + 0.2))}
                   className="p-1 rounded hover:bg-white transition"
                   title="Vergrößern"
                 >
-                  <ZoomIn size={16} />
+                  <ZoomIn size={15} />
                 </button>
               </div>
             </div>
 
-            {/* Right: Export & File Info */}
-            <div className="flex items-center gap-2.5">
-              {/* Editable Filename input */}
-              <div className="flex items-center bg-[#F5F5F7] border border-gray-200/80 rounded-xl px-2.5 py-1.5 focus-within:border-[#0071E3] focus-within:bg-white focus-within:shadow-sm transition">
-                <span className="text-[11px] text-gray-400 font-medium mr-1.5 hidden lg:inline">Dateiname:</span>
+            {/* Right: Export, Project Save & File Info */}
+            <div className="flex items-center gap-1.5">
+              <div className="flex items-center bg-[#F5F5F7] border border-gray-200/80 rounded-xl px-2 py-1 focus-within:border-[#0071E3] focus-within:bg-white transition">
                 <input
                   type="text"
                   value={documentTitle}
                   onChange={(e) => setDocumentTitle(e.target.value)}
                   placeholder="Dateiname..."
-                  className="bg-transparent text-xs font-semibold text-gray-800 focus:outline-none w-28 sm:w-44"
+                  className="bg-transparent text-xs font-semibold text-gray-800 focus:outline-none w-24 sm:w-36"
                 />
                 <span className="text-[11px] font-mono text-gray-400 select-none">.pdf</span>
               </div>
 
               <button
+                onClick={handleExportProject}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold transition"
+                title="Als bearbeitbare .pdftool Projektdatei speichern (alle Textboxen & Stempel bleiben später verschiebbar)"
+              >
+                <Save size={14} />
+                <span className="hidden xl:inline">Projekt</span>
+              </button>
+
+              <button
                 onClick={() => {
-                  if (confirm('Anderes Dokument öffnen? Ungespeicherte Änderungen gehen verloren.')) {
+                  if (confirm('Anderes Dokument öffnen?')) {
                     setFile(null);
                     setPdfBytes(null);
                     setPdfDoc(null);
                   }
                 }}
-                className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition"
-                title="Anderes PDF laden oder neues Dokument beginnen"
+                className="p-1.5 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition"
+                title="Anderes PDF laden oder Startbildschirm öffnen"
               >
-                <FolderOpen size={14} />
-                <span className="hidden xl:inline">Wechseln</span>
+                <FolderOpen size={15} />
               </button>
 
               <button
                 onClick={handleExport}
                 disabled={exporting}
-                className="flex items-center gap-2 px-4 py-1.5 bg-[#0071E3] hover:bg-[#0077ED] text-white rounded-xl text-sm font-semibold shadow-sm transition disabled:opacity-60"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#0071E3] hover:bg-[#0077ED] text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-60"
               >
-                {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                <span>Speichern</span>
+                {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                <span>PDF speichern</span>
               </button>
             </div>
           </div>
 
+          {/* Collapsible Fulltext Search Bar */}
+          {showSearchBar && (
+            <div className="bg-white border-b border-gray-200 px-6 py-2 flex flex-wrap items-center justify-between gap-3 shadow-sm z-20">
+              <form onSubmit={handleRunSearch} className="flex items-center gap-2 flex-1 max-w-md">
+                <Search size={15} className="text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Begriff im gesamten PDF suchen..."
+                  autoFocus
+                  className="flex-1 text-xs px-3 py-1.5 rounded-xl border border-gray-300 focus:outline-none focus:border-[#0071E3]"
+                />
+                <button
+                  type="submit"
+                  disabled={searching}
+                  className="px-3 py-1.5 bg-[#0071E3] text-white rounded-xl text-xs font-semibold"
+                >
+                  {searching ? 'Suche...' : 'Suchen'}
+                </button>
+              </form>
+
+              <div className="flex items-center gap-2 overflow-x-auto">
+                {searchResults.length > 0 ? (
+                  searchResults.map((hit, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setCurrentPage(hit.page)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition shrink-0 ${
+                        currentPage === hit.page
+                          ? 'bg-blue-50 border-[#0071E3] text-[#0071E3]'
+                          : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
+                      }`}
+                      title={hit.snippet}
+                    >
+                      Seite {hit.page}
+                    </button>
+                  ))
+                ) : searchQuery.trim() && !searching ? (
+                  <span className="text-xs text-gray-400">Keine Treffer</span>
+                ) : null}
+
+                <button
+                  onClick={() => setShowSearchBar(false)}
+                  className="p-1 text-gray-400 hover:text-gray-700"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Active Tool Banner */}
-          {activeTool === 'add-text' && (
-            <div className="bg-[#0071E3] text-white text-xs font-medium py-1.5 px-4 text-center shadow-inner flex items-center justify-center gap-2">
-              <Type size={14} />
-              <span>Tippe oder klicke an eine beliebige Stelle auf der PDF-Seite, um das Textfeld zu platzieren.</span>
+          {activeTool !== 'select' && (
+            <div className="bg-[#0071E3] text-white text-xs font-medium py-1.5 px-4 text-center shadow-inner flex items-center justify-center gap-3">
+              <span>
+                {activeTool === 'add-text' &&
+                  'Klicke auf die PDF-Seite, um das Textfeld zu platzieren.'}
+                {activeTool === 'add-highlight' &&
+                  'Klicke auf die Stelle im PDF, die du mit dem Textmarker hervorheben möchtest.'}
+                {activeTool === 'add-redaction' &&
+                  'Klicke auf den sensiblen Bereich, um eine echte DSGVO-Schwärzung zu platzieren (wird beim Speichern unlesbar eingebrannt).'}
+                {activeTool === 'draw-freehand' &&
+                  'Halte die Maustaste (oder den Apple Pencil) gedrückt, um frei auf der Seite zu zeichnen.'}
+              </span>
+              {activeTool === 'draw-freehand' && (
+                <div className="flex items-center gap-1 bg-black/20 px-2 py-0.5 rounded-lg">
+                  {['#0071E3', '#E02020', '#107C41', '#000000'].map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setFreehandColor(c)}
+                      style={{ backgroundColor: c }}
+                      className={`w-3.5 h-3.5 rounded-full border border-white ${
+                        freehandColor === c ? 'scale-125 ring-2 ring-white' : ''
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
               <button
                 onClick={() => setActiveTool('select')}
-                className="ml-3 underline hover:opacity-80"
+                className="underline font-bold hover:opacity-80"
               >
-                Abbrechen
+                Fertig / Abbrechen
               </button>
             </div>
           )}
@@ -878,9 +1588,16 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                 <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
                   Seiten ({numPages})
                 </span>
+                <button
+                  onClick={() => handleRotatePage(currentPage)}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 hover:text-[#0071E3] px-1.5 py-0.5 rounded hover:bg-gray-100 transition"
+                  title="Aktuelle Seite um 90° drehen"
+                >
+                  <RotateCw size={12} />
+                  <span>90°</span>
+                </button>
               </div>
 
-              {/* Action buttons to Add Blank Page or Append PDF */}
               <div className="flex flex-col gap-1.5 pb-2 border-b border-gray-100">
                 <button
                   onClick={handleAddBlankPage}
@@ -908,16 +1625,15 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                   <button
                     onClick={onOpenMergeTab}
                     className="w-full flex items-center justify-center gap-1.5 py-1.5 px-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-semibold transition border border-purple-200/60"
-                    title="Seiten visuell im Raster sortieren, drehen oder löschen"
                   >
                     <FileStack size={14} />
-                    <span>Seiten organisieren ({numPages})</span>
+                    <span>Seiten sortieren ({numPages})</span>
                   </button>
                 )}
               </div>
 
-              {/* Thumbnails List */}
-              <div className="flex flex-col gap-3">
+              {/* Pages List */}
+              <div className="flex flex-col gap-2.5">
                 {Array.from({ length: numPages }, (_, i) => i + 1).map((pNum) => (
                   <div
                     key={pNum}
@@ -940,24 +1656,37 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                       <span className="text-xs font-medium text-gray-600 mt-1.5">Seite {pNum}</span>
                     </button>
 
-                    {/* Delete Page Button (if document has more than 1 page) */}
-                    {numPages > 1 && (
+                    {/* Rotate & Delete Page Buttons */}
+                    <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeletePage(pNum);
+                          handleRotatePage(pNum);
                         }}
-                        className="absolute top-2 right-2 p-1 rounded-md bg-white/90 hover:bg-red-50 text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 shadow-sm border border-gray-200 transition"
-                        title={`Seite ${pNum} löschen`}
+                        className="p-1 rounded-md bg-white/90 hover:bg-blue-50 text-gray-500 hover:text-[#0071E3] shadow-sm border border-gray-200"
+                        title={`Seite ${pNum} drehen`}
                       >
-                        <Trash2 size={13} />
+                        <RotateCw size={12} />
                       </button>
-                    )}
+
+                      {numPages > 1 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeletePage(pNum);
+                          }}
+                          className="p-1 rounded-md bg-white/90 hover:bg-red-50 text-gray-400 hover:text-red-600 shadow-sm border border-gray-200"
+                          title={`Seite ${pNum} löschen`}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
 
                     {annotations.some((a) => a.pageNumber === pNum) && (
                       <span
                         className="absolute bottom-2 left-2 w-2 h-2 rounded-full bg-[#0071E3]"
-                        title="Enthält Anmerkungen"
+                        title="Enthält Bearbeitungen"
                       />
                     )}
                   </div>
@@ -975,10 +1704,13 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
               <div
                 ref={pageContainerRef}
                 onClick={handlePageClick}
+                onPointerDown={handlePagePointerDown}
+                onPointerMove={handlePagePointerMove}
+                onPointerUp={handlePagePointerUp}
                 onDragOver={handleDragOver}
                 onDrop={handleViewportDrop}
                 className={`relative bg-white shadow-2xl rounded-sm transition-all ${
-                  activeTool === 'add-text' ? 'cursor-crosshair' : 'cursor-default'
+                  activeTool !== 'select' ? 'cursor-crosshair' : 'cursor-default'
                 }`}
                 style={{
                   width: canvasDimensions.width || 'auto',
@@ -987,6 +1719,22 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
               >
                 {/* Mozilla PDF.js Canvas */}
                 <canvas ref={canvasRef} className="block" />
+
+                {/* Live Freehand Stroke Preview */}
+                {isDrawingStroke && currentStrokePoints.length > 1 && (
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none z-30">
+                    <polyline
+                      points={currentStrokePoints
+                        .map((p) => `${p.x * canvasDimensions.width},${p.y * canvasDimensions.height}`)
+                        .join(' ')}
+                      fill="none"
+                      stroke={freehandColor}
+                      strokeWidth={2.5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
 
                 {/* Overlaid Interactive Annotations Layer */}
                 {canvasDimensions.width > 0 && (
@@ -1013,6 +1761,31 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         isOpen={isSignatureModalOpen}
         onClose={() => setIsSignatureModalOpen(false)}
         onConfirmSignature={handleAddSignature}
+      />
+
+      {/* Company & Status Stamp Modal */}
+      <StampModal
+        isOpen={isStampModalOpen}
+        onClose={() => setIsStampModalOpen(false)}
+        onConfirmStamp={handleAddStamp}
+      />
+
+      {/* Interactive AcroForm Filler Modal */}
+      <FormFillerModal
+        isOpen={isFormModalOpen}
+        onClose={() => setIsFormModalOpen(false)}
+        pdfBytes={pdfBytes}
+        initialFields={formFields}
+        onApplyFormChanges={(updatedBytes) => reloadPdfFromBuffer(updatedBytes, currentPage)}
+      />
+
+      {/* Page Numbers, Bates, Header/Footer & Watermarks Modal */}
+      <PageDecorationsModal
+        isOpen={isDecorationsModalOpen}
+        onClose={() => setIsDecorationsModalOpen(false)}
+        pdfBytes={pdfBytes}
+        numPages={numPages}
+        onApplyDecorations={(updatedBytes) => reloadPdfFromBuffer(updatedBytes, currentPage)}
       />
 
       {/* Gemini AI Assistant Modal / Slide-Over */}

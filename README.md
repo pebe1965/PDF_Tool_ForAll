@@ -1,8 +1,8 @@
-# PDF Tool ForAll 📄✍️
+# PDF Tool ForAll — Business Suite 📄✍️🏢
 
 Ein 100% kostenloses, privates und lokales PDF-Werkzeug für **macOS**, **Windows** und **iPadOS**.
 
-Keine Abonnements, kein Cloud-Upload, keine Limits.
+Keine Abonnements, kein Cloud-Upload für lokale PDF-Bearbeitung, keine Limits.
 
 ---
 
@@ -24,55 +24,56 @@ Die fertigen Pakete findest du immer unter **[GitHub Releases](https://github.co
 
 ### 📱 Für iPad & Tablets
 1. Starte das Tool auf deinem Mac oder Windows-Rechner im selben WLAN.
-2. Das Tool zeigt dir beim Start (und in den Netzwerkinformationen) die IP-Adresse an (z. B. `http://192.168.178.xxx:8000`).
-3. Öffne diese URL in Safari auf dem iPad.
-4. *Tipp:* Tippe auf das Teilen-Symbol und wähle **„Zum Home-Bildschirm“** — das Tool lässt sich dann im Vollbildmodus inklusive Apple-Pencil-Unterstützung für Unterschriften nutzen!
+2. Öffne die lokale URL in Safari auf dem iPad.
+3. *Tipp:* Tippe auf das Teilen-Symbol und wähle **„Zum Home-Bildschirm“** — das Tool lässt sich dann im Vollbildmodus inklusive Apple-Pencil-Unterstützung für Unterschriften und Freihand-Zeichnungen nutzen!
 
 ---
 
-## 🔄 Automatische Update-Erkennung
+## 🌟 Funktionen im Überblick (Business Suite v1.2.0)
 
-Das Tool verfügt über eine integrierte GitHub-Update-Erkennung:
-- Sobald auf GitHub ein neues Release (`v1.0.1`, `v1.1.0`, etc.) veröffentlicht wird, erscheint im Header ein grüner Hinweis **„Update verfügbar: v...“**.
-- Mit einem Klick darauf öffnen sich die Versionshinweise und direkte Download-Links für macOS und Windows.
-
----
-
-## 🌟 Funktionen im Überblick
-
-### 1. ✍️ Bearbeiten & Signieren
-- **Freie Textfelder**:
+### 1. ✍️ Bearbeiten, Stempeln, Schwärzen & Signieren
+- **Freie Textfelder & Typografie-Engine**:
   - Text an beliebiger Stelle einfügen, verschieben und über Ecken-Anfasser in der Breite anpassen.
-  - Automatischer Zeilenumbruch mit mitwachsender Höhe.
-  - Schriftarten-Auswahl: Standard (Sans), Serif (Times), Monospace (Courier) in Normal, Fett oder Kursiv.
-  - Schriftgröße, Schriftfarbe und Hintergrundoptionen (z. B. Deckweiß zum Überdecken / Korrigieren alter Inhalte oder Gelb für Notizen).
-  - Textfeld-Duplizierung mit einem Klick.
-- **Unterschriften (Signatur)**:
-  - Direktes Zeichnen mit Touchpad, Maus oder Apple Pencil.
-  - Unterschriften als Stempel abspeichern und wiederverwenden.
-  - Frei skalierbar und verschiebbar.
-- **Neues leeres Dokument**: Ein komplett neues leeres PDF (z. B. als Notizblatt oder Formular) erstellen.
-- **Neue leere Seiten einfügen**: Über die Seitenleiste können jederzeit neue weiße Seiten an beliebiger Stelle hinzugefügt werden.
-- **Eigener Dateiname**: Vor dem Speichern kann ein individueller Dateiname vergeben werden.
+  - Automatischer Zeilenumbruch mit mitwachsender Höhe und Erkennung von Überschriften (`H1`, `H2`, Aufzählungen).
+  - Schriftarten (`Sans`, `Serif`, `Mono`) in Normal, Fett oder Kursiv, Farben und Hintergrundoptionen (**Deckweiß** zum Überdecken alter Inhalte oder **Gelb** für Notizen).
+- **Firmen- & Büro-Stempelkasten**:
+  - Vorgefertigte & eigene Stempel (`FREIGEGEBEN`, `BEZAHLT`, `GEPRÜFT`, `EINGEGANGEN`, `VERTRAULICH`, `ABGELEHNT`, `ENTWURF`, `KOPIE`) mit **automatischem Tagesdatum** und eigenem **Namens-/Abteilungskürzel**.
+- **Textmarker, Symbole & Formen**:
+  - Halbtransparenter **Textmarker** (Gelb, Grün, Pink, Blau).
+  - 1-Klick-Prüfsymbole (**Häkchen ✓**, **Kreuzchen ✗**, Rahmen, Kreis, Pfeil) sowie **Freihand-Stift**.
+- **Echte DSGVO-Schwärzung (Redaction)**:
+  - Sensible Daten (IBAN, Namen, Gehälter) mit Schwärzungsbalken abdecken — beim PDF-Export wird die betroffene Seite hochauflösend gerastert, sodass darunterliegender Text **unwiderruflich aus dem PDF-Code entfernt** ist.
+- **Ausfüllbare PDF-Formulare (AcroForms)**:
+  - Erkennt interaktive Formularfelder (Textfelder, Checkboxen, Dropdowns) automatisch, lässt sie direkt ausfüllen und auf Wunsch **schreibgeschützt einbrennen (Flatten)**.
+- **Seitenzahlen, Bates-Nummerierung, Kopf-/Fußzeile & Wasserzeichen**:
+  - Automatische Seitennummerierung (`Seite 1 von N`, `Bates #000001`), Kopf-/Fußzeilen und diagonale **Wasserzeichen** (`VERTRAULICH`, `ENTWURF`, `MUSTER`) über alle Seiten.
+- **Unterschriften (Signatur)** & **Bilder / Screenshots (`Cmd+V` / `Strg+V`)**.
+- **Undo / Redo (`Cmd+Z` / `Cmd+Shift+Z`)**, **Volltextsuche (`Cmd+F`)** sowie **Auto-Save (IndexedDB)** und Export/Import als bearbeitbare **`.pdftool`-Projektdatei**.
 
-### 2. 📑 Zusammenführen & Organisieren
-- **Mehrere PDFs vereinen**: Beliebig viele PDFs per Drag & Drop reinziehen.
-- **Automatische Synchronisation**: PDFs, die im Editor geöffnet wurden, können direkt in den Zusammenführen-Tab übernommen werden und umgekehrt.
-- **Seiten anordnen**: Seiten mit Pfeiltasten nach links oder rechts verschieben.
-- **Seiten drehen**: Um 90° im Uhrzeigersinn drehen.
-- **Seiten löschen**: Einzelne Seiten entfernen.
-- **Benannter Export**: Individueller Dateiname beim Zusammenführen.
+### 2. 📑 Zusammenführen & Sortieren (PDFs & Bilder)
+- **PDFs & Bilder (`.png`, `.jpg`, `.webp`) vereinen**: Auch abfotografierte Belege oder Screenshots werden automatisch in DIN-A4-Seiten umgewandelt.
+- **Drag & Drop Sortierung**: Seitenkacheln direkt mit der Maus umsortieren.
+- **Stapel-Aktionen (Mehrfachauswahl)**: Mehrere Seiten gleichzeitig auswählen, drehen oder löschen.
 
----
+### 3. 🛠️ Werkzeuge & Business
+- **PDF Teilen & Stapel-Trennung (Split & Burst)**:
+  - Nach Seitenbereichen (`1-3, 4-6, 7-Ende`) oder automatisch alle $N$ Seiten (z. B. Sammel-Scans/Rechnungen) in Einzel-PDFs aufteilen.
+- **PDF Komprimieren (Dateigröße reduzieren)**:
+  - Große Scans in 3 Qualitätsstufen (`Kompakt < 2,8 MB`, `Standard Büro 150 DPI`, `Hohe Qualität 220 DPI`) verkleinern.
+- **E-Rechnung Prüfer (ZUGFeRD / Factur-X / XRechnung)**:
+  - Erkennt und liest eingebettete XML-Rechnungsdaten (`CrossIndustryInvoice` & `UBL`) aus PDF-Rechnungen aus, zeigt alle Rechnungspositionen tabellarisch an und exportiert sie nach **Excel (`.csv`)** oder `.xml`.
+- **Vertrags- & Dokumentenvergleich (PDF-Diff)**:
+  - Vergleicht zwei PDF-Versionen (`Alt` vs. `Neu`) zeilenweise (Rot/Grün) sowie optional per **Gemini KI-Vertragsvergleich**.
+- **PDF ➔ Bilder Export (`PNG`/`JPEG`) & Metadaten-Bereinigung (Sanitizer)**:
+  - Versteckte Metadaten (Autor, Programm, Stichwörter) einsehen oder mit 1 Klick vor dem Versand restlos löschen.
 
-## 🔒 100 % Datenschutz & DSGVO-konform
-Sämtliche PDF-Verarbeitungen finden **ausschließlich im lokalen Arbeitsspeicher deines Geräts** statt. Keine Dateien werden je über ein Netzwerk oder an externe Cloud-Server gesendet.
+### 4. ✨ Gemini KI-Assistent (über NotionaryAtlas)
+- **Zusammenfassung**, **Rechtschreib-/Grammatikprüfung**, **Fachübersetzung**, **Text & Vertragsklauseln generieren** und **PDF-Chat**.
+- **Neu: Rechnungs- & Tabellen-Extraktor (➔ Excel / CSV)** sowie **DSGVO- & Vertragsrisiko-Audit**.
 
 ---
 
 ## 🛠️ Für Entwickler / Releases bauen
-
-Um aus dem Quellcode die Distributionspakete neu zu erstellen:
 
 ```bash
 # Release-Build starten:

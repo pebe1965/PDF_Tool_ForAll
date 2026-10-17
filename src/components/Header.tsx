@@ -1,11 +1,11 @@
 import React from 'react';
-import { FileEdit, FileStack, ShieldCheck, Sparkles, Settings } from 'lucide-react';
+import { FileEdit, FileStack, ShieldCheck, Sparkles, Settings, Wrench } from 'lucide-react';
 import { APP_VERSION } from '../config';
 import { UpdateNotification } from './UpdateNotification';
 
 interface HeaderProps {
-  activeTab: 'editor' | 'merge';
-  onTabChange: (tab: 'editor' | 'merge') => void;
+  activeTab: 'editor' | 'merge' | 'tools';
+  onTabChange: (tab: 'editor' | 'merge' | 'tools') => void;
   onOpenAiAssistant?: () => void;
   onOpenSettings?: () => void;
 }
@@ -27,7 +27,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-2">
             <h1 className="font-bold text-lg text-[#1D1D1F] tracking-tight">PDF Tool ForAll</h1>
             <span className="text-[10px] font-semibold bg-blue-100 text-[#0071E3] px-2 py-0.5 rounded-full uppercase tracking-wider">
-              Free & Open
+              Business Suite
             </span>
           </div>
           <p className="text-xs text-[#86868B] hidden sm:block">
@@ -40,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
       <nav className="flex items-center bg-[#F5F5F7] p-1 rounded-2xl border border-[#E8E8ED]">
         <button
           onClick={() => onTabChange('editor')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition ${
             activeTab === 'editor'
               ? 'bg-white text-[#0071E3] shadow-sm'
               : 'text-[#86868B] hover:text-[#1D1D1F]'
@@ -52,7 +52,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         <button
           onClick={() => onTabChange('merge')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition ${
             activeTab === 'merge'
               ? 'bg-white text-[#0071E3] shadow-sm'
               : 'text-[#86868B] hover:text-[#1D1D1F]'
@@ -60,6 +60,18 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <FileStack size={16} />
           <span>Zusammenführen & Sortieren</span>
+        </button>
+
+        <button
+          onClick={() => onTabChange('tools')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition ${
+            activeTab === 'tools'
+              ? 'bg-white text-[#0071E3] shadow-sm'
+              : 'text-[#86868B] hover:text-[#1D1D1F]'
+          }`}
+        >
+          <Wrench size={16} />
+          <span>Werkzeuge & Business</span>
         </button>
       </nav>
 
@@ -69,7 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenAiAssistant}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-xs font-semibold shadow-md shadow-indigo-500/20 transition hover:scale-105 active:scale-95"
-            title="Dokument mit Gemini KI analysieren, zusammenfassen, übersetzen oder korrigieren"
+            title="Dokument mit Gemini KI analysieren, Rechnungen nach Excel exportieren, übersetzen oder korrigieren"
           >
             <Sparkles size={14} className="animate-pulse" />
             <span>Gemini KI</span>
@@ -100,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenSettings}
             className="hidden sm:inline text-[11px] font-mono text-gray-500 bg-gray-100 hover:bg-gray-200 hover:text-black px-2 py-1 rounded-lg transition"
-            title="Version v1.0.0 (Klicken für Updates & Einstellungen)"
+            title={`Version v${APP_VERSION} (Klicken für Updates & Einstellungen)`}
           >
             v{APP_VERSION}
           </button>

@@ -474,3 +474,153 @@ Wenn die Information im Dokument vorhanden ist, nenne wenn möglich auch den Kon
     extractedText: fullText,
   });
 }
+
+/**
+ * 7. Rechnungen, Belege & Tabellen strukturiert für Excel / CSV auslesen
+ */
+export async function extractBusinessDataWithAi(
+  pdfBytes: ArrayBuffer,
+  mode: 'invoice' | 'tables' | 'privacy_audit',
+  pageNumber?: number,
+  annotations?: Annotation[]
+): Promise<{ reportText: string; csvData: string }> {
+  const { fullText } = await extractTextFromPdf(pdfBytes, pageNumber, annotations);
+
+  let effectivePdfBytes = pdfBytes;
+  if (pageNumber) {
+    try {
+      const singlePageBytes = await extractSinglePageAsPdf(pdfBytes, pageNumber);
+      effectivePdfBytes = singlePageBytes.buffer as ArrayBuffer;
+    } catch (_) {
+      effectivePdfBytes = pdfBytes;
+    }
+  }
+
+  if (mode === 'invoice') {
+    const prompt = `Lies alle Rechnungs-, Angebots- oder Belegdaten aus diesem Dokument präzise aus.
+Gib zuerst eine übersichtliche Zusammenfassung der Kopfdaten aus (Lieferant/Aussteller, Rechnungsnummer, Rechnungsdatum, Leistungszeitraum, Zahlungsziel, IBAN, Netto, MwSt., Brutto).
+Gib danach am Ende unter der exakten Überschrift "CSV_EXPORT_START" eine Semikolon-getrennte Tabelle (;) für Microsoft Excel aus, die erst die Kopfdaten und darunter alle Einzelpositionen (Pos;Bezeichnung;Menge;Einzelpreis;Gesamtpreis) enthält.`;
+
+    const res = await callGeminiApi({
+      prompt,
+      systemInstruction:
+        'Du bist ein präziser Buchhaltungs- und Finanz-Assistent. Extrahiere Beträge, Daten, IBAN und Rechnungspositionen exakt.',
+      pdfBytes: effectivePdfBytes,
+      extractedText: fullText,
+    });
+
+    const parts = res.split(/CSV_EXPORT_START[:]?/i);
+    const reportText = parts[0]?.trim() || res;
+    const csvData =
+      parts[1]?.trim() ||
+      convertTextLinesToFallbackCsv(reportText);
+    return { reportText, csvData };
+  }
+
+  if (mode === 'tables') {
+    const prompt = `Extrahiere sämtliche Tabellen, Listen, Positionen oder strukturierten Daten aus diesem Dokument.
+Gib zuerst eine lesbare Übersicht aus und füge darunter ab der Zeile "CSV_EXPORT_START" die vollständigen Tabellendaten im Semikolon-getrennten CSV-Format (Spalte1;Spalte2;Spalte3...) für den direkten Import in Microsoft Excel an.`;
+
+    const res = await callGeminiApi({
+      prompt,
+      systemInstruction:
+        'Du bist ein Daten-Analyst. Extrahiere Tabellen vollständig und spaltengetreu in das Semikolon-CSV-Format.',
+      pdfBytes: effectivePdfBytes,
+      extractedText: fullText,
+    });
+
+    const parts = res.split(/CSV_EXPORT_START[:]?/i);
+    const reportText = parts[0]?.trim() || res;
+    const csvData = parts[1]?.trim() || convertTextLinesToFallbackCsv(reportText);
+    return { reportText, csvData };
+  }
+
+  // mode === 'privacy_audit'
+  const prompt = `Führe eine gründliche DSGVO-Datenschutz- und Vertragsrisiko-Prüfung dieses Dokuments durch:
+1. Personenbezogene & sensible Daten (zum Schwärzen): Liste alle gefundenen Namen, Adressen, E-Mail-Adressen, Telefonnummern, IBAN/Bankdaten, Geburtsdaten, Kunden-/Steuernummern oder Gehaltsangaben mit Seitenzahl auf.
+2. Kritische Vertragsklauseln & Fristen: Weise auf Kündigungsfristen, automatische Vertragsverlängerungen, Haftungsrisiken, Vertragsstrafen oder ungewöhnliche Zahlungsbedingungen hin.`;
+
+  const res = await callGeminiApi({
+    prompt,
+    systemInstruction:
+      'Du bist ein Datenschutzbeauftragter (DSGVO) und Wirtschaftsjurist. Prüfe Dokumente präzise auf sensible Daten und vertragliche Risiken.',
+    pdfBytes: effectivePdfBytes,
+    extractedText: fullText,
+  });
+
+  return { reportText: res, csvData: '' };
+}
+
+function convertTextLinesToFallbackCsv(text: string): string {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const csvRows: string[] = ['Feld / Position;Wert / Details'];
+  for (const line of lines) {
+    const clean = line.replace(/^[•\-]\s*/, '');
+    if (clean.includes(':')) {
+      const idx = clean.indexOf(':');
+      const k = clean.slice(0, idx).trim().replace(/;/g, ',');
+      const v = clean.slice(idx + 1).trim().replace(/;/g, ',');
+      csvRows.push(`${k};${v}`);
+    } else if (clean.includes(';')) {
+      csvRows.push(clean);
+    }
+  }
+  return csvRows.join('\n');
+}
+
+/**
+ * 8. Zwei PDF-Dokumente inhaltlich per KI vergleichen (Vertrags- & Angebots-Diff)
+ */
+export async function comparePdfDocumentsWithAi(
+  textA: string,
+  nameA: string,
+  textB: string,
+  nameB: string
+): Promise<string> {
+  const prompt = `Vergleiche die folgenden zwei Dokument-Versionen sorgfältig miteinander:
+
+DOKUMENT A (Alt / "${nameA}"):
+"""
+${textA.slice(0, 25000)}
+"""
+
+DOKUMENT B (Neu / "${nameB}"):
+"""
+${textB.slice(0, 25000)}
+"""
+
+Erstelle eine strukturierte Übersicht aller Änderungen:
+1. Geänderte Zahlen, Preise, Beträge oder Mengen (Alt -> Neu)
+2. Geänderte Daten, Fristen oder Laufzeiten
+3. Neu hinzugefügte Abschnitte oder Klauseln
+4. Gestrichene / entfernte Inhalte
+5. Fazit / Risikobewertung der Änderungen`;
+
+  return callGeminiApi({
+    prompt,
+    systemInstruction:
+      'Du bist ein präziser Dokumenten-Prüfer für Verträge, Angebote und Geschäftsdokumente. Arbeite jede inhaltliche Abweichung zwischen Version A und Version B klar heraus.',
+  });
+}
+
+/**
+ * Triggers a download of a CSV string with UTF-8 BOM so Microsoft Excel (macOS & Windows) opens umlauts and columns cleanly
+ */
+export function downloadCsvForExcel(csvContent: string, filename: string) {
+  const cleanCsv = csvContent
+    .replace(/^```[a-z]*\n?/i, '')
+    .replace(/```$/i, '')
+    .trim();
+  // UTF-8 BOM (\uFEFF) ensures Excel recognizes UTF-8 encoding (ä, ö, ü, ß, €)
+  const bom = '\uFEFF';
+  const blob = new Blob([bom + cleanCsv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename.endsWith('.csv') ? filename : `${filename}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+

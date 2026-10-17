@@ -8,11 +8,20 @@ import {
   Copy,
   Lock,
   Unlock,
-  ImageIcon,
   Edit3,
   Check,
+  ShieldAlert,
 } from 'lucide-react';
-import { TextAnnotation, SignatureAnnotation, ImageAnnotation, Annotation } from '../types/pdf';
+import {
+  TextAnnotation,
+  SignatureAnnotation,
+  ImageAnnotation,
+  HighlightAnnotation,
+  RedactionAnnotation,
+  ShapeAnnotation,
+  FreehandDrawingAnnotation,
+  Annotation,
+} from '../types/pdf';
 import { classifyLine } from '../lib/a4Pagination';
 
 interface AnnotationLayerProps {
@@ -22,7 +31,7 @@ interface AnnotationLayerProps {
   annotations: Annotation[];
   onUpdateAnnotation: (ann: Annotation) => void;
   onDeleteAnnotation: (id: string) => void;
-  onDuplicateAnnotation?: (ann: TextAnnotation | ImageAnnotation) => void;
+  onDuplicateAnnotation?: (ann: Annotation) => void;
   selectedAnnotationId: string | null;
   onSelectAnnotation: (id: string | null) => void;
 }
@@ -60,27 +69,23 @@ const TextAnnotationItem: React.FC<{
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [isEditing, setIsEditing] = useState<boolean>(!textAnn.text || textAnn.text.trim().length === 0);
 
-  // If selection is lost, exit edit mode
   useEffect(() => {
     if (!isSelected) {
       setIsEditing(false);
     }
   }, [isSelected]);
 
-  // Focus textarea when entering edit mode
   useEffect(() => {
     if (isEditing && textareaRef.current) {
       textareaRef.current.focus();
     }
   }, [isEditing]);
 
-  // Default width to 30% of page if undefined
   const effectiveWidthNorm = textAnn.width || 0.3;
   const leftPx = textAnn.x * pageWidth;
   const topPx = textAnn.y * pageHeight;
   const widthPx = effectiveWidthNorm * pageWidth;
 
-  // Auto-resize textarea height so text never clips and never shows a scrollbar
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -92,7 +97,6 @@ const TextAnnotationItem: React.FC<{
     onUpdate({ ...textAnn, text: e.target.value });
   };
 
-  // Quick adjust width via toolbar
   const adjustWidthDelta = (deltaNorm: number) => {
     const newWidth = Math.max(0.08, Math.min(0.98 - textAnn.x, effectiveWidthNorm + deltaNorm));
     onUpdate({ ...textAnn, width: newWidth });
@@ -117,8 +121,8 @@ const TextAnnotationItem: React.FC<{
         hasBackground ? 'rounded-lg shadow-sm border border-gray-300/60 p-1' : ''
       } ${
         isSelected
-          ? 'ring-2 ring-[#0071E3] ring-offset-2 rounded-xl bg-white/70 shadow-xl'
-          : 'hover:ring-1 hover:ring-blue-300 rounded-xl hover:bg-white/40'
+          ? 'ring-2 ring-[#0071E3] ring-offset-2 rounded-xl bg-white/70 shadow-xl z-20'
+          : 'hover:ring-1 hover:ring-blue-300 rounded-xl hover:bg-white/40 z-10'
       }`}
     >
       {/* Floating Toolbar when Selected */}
@@ -127,7 +131,6 @@ const TextAnnotationItem: React.FC<{
           className="absolute -top-11 left-0 flex items-center gap-1.5 bg-[#1D1D1F] text-white px-2.5 py-1.5 rounded-xl shadow-2xl text-xs z-30 select-none whitespace-nowrap"
           onPointerDown={(e) => e.stopPropagation()}
         >
-          {/* Edit / Done Toggle */}
           <button
             onClick={() => setIsEditing(!isEditing)}
             className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition ${
@@ -152,7 +155,6 @@ const TextAnnotationItem: React.FC<{
 
           <div className="w-[1px] h-3.5 bg-white/20" />
 
-          {/* Font Family Selector */}
           <select
             value={textAnn.fontFamily || 'Helvetica'}
             onChange={(e) => onUpdate({ ...textAnn, fontFamily: e.target.value as any })}
@@ -163,7 +165,6 @@ const TextAnnotationItem: React.FC<{
             <option value="Courier" className="bg-[#1D1D1F] text-white">Mono (Courier)</option>
           </select>
 
-          {/* Bold and Italic Toggles */}
           <div className="flex items-center bg-white/10 p-0.5 rounded-lg">
             <button
               onClick={() => onUpdate({ ...textAnn, isBold: !textAnn.isBold })}
@@ -187,7 +188,6 @@ const TextAnnotationItem: React.FC<{
 
           <div className="w-[1px] h-3.5 bg-white/20" />
 
-          {/* Font Size */}
           <div className="flex items-center gap-1 bg-white/10 px-1.5 py-0.5 rounded-lg">
             <button
               onClick={() => onUpdate({ ...textAnn, fontSize: Math.max(8, textAnn.fontSize - 2) })}
@@ -208,7 +208,6 @@ const TextAnnotationItem: React.FC<{
 
           <div className="w-[1px] h-3.5 bg-white/20" />
 
-          {/* Quick Width Buttons */}
           <div className="flex items-center gap-1 bg-white/10 px-1.5 py-0.5 rounded-lg">
             <span className="text-[10px] text-gray-400 flex items-center gap-0.5 mr-0.5">
               <ArrowLeftRight size={10} />
@@ -232,7 +231,6 @@ const TextAnnotationItem: React.FC<{
 
           <div className="w-[1px] h-3.5 bg-white/20" />
 
-          {/* Text Color Dots */}
           <div className="flex items-center gap-1" title="Textfarbe">
             {['#000000', '#0071E3', '#E02020', '#107C41'].map((c) => (
               <button
@@ -248,7 +246,6 @@ const TextAnnotationItem: React.FC<{
 
           <div className="w-[1px] h-3.5 bg-white/20" />
 
-          {/* Background / Whiteout Selector */}
           <div className="flex items-center gap-1 bg-white/10 px-1.5 py-0.5 rounded-lg" title="Hintergrund / Text abdecken">
             <button
               onClick={() => onUpdate({ ...textAnn, backgroundColor: 'transparent' })}
@@ -264,7 +261,7 @@ const TextAnnotationItem: React.FC<{
               className={`text-[10px] px-1 py-0.5 rounded ${
                 textAnn.backgroundColor === '#FFFFFF' ? 'bg-white text-black font-bold' : 'text-gray-300 hover:text-white'
               }`}
-              title="Weiß (alten Text überdecken / schwärzen)"
+              title="Weiß (alten Text überdecken)"
             >
               Weiß
             </button>
@@ -281,7 +278,6 @@ const TextAnnotationItem: React.FC<{
 
           <div className="w-[1px] h-3.5 bg-white/20" />
 
-          {/* Duplicate button */}
           {onDuplicate && (
             <button
               onClick={onDuplicate}
@@ -292,7 +288,6 @@ const TextAnnotationItem: React.FC<{
             </button>
           )}
 
-          {/* Delete */}
           <button
             onClick={onDelete}
             className="p-1 hover:bg-red-500 rounded text-red-300 hover:text-white transition"
@@ -303,9 +298,8 @@ const TextAnnotationItem: React.FC<{
         </div>
       )}
 
-      {/* Box Inner Layout: Drag Grip + Formatted View or Auto-expanding Textarea */}
+      {/* Box Inner Layout */}
       <div className="relative p-1.5 flex items-start gap-1">
-        {/* Dedicated Drag Handle */}
         <div
           onPointerDown={onStartDrag}
           className="p-1 text-gray-400 hover:text-[#0071E3] hover:bg-blue-50 rounded cursor-grab active:cursor-grabbing transition shrink-0 select-none"
@@ -315,7 +309,6 @@ const TextAnnotationItem: React.FC<{
         </div>
 
         {isEditing ? (
-          /* Textarea while actively editing */
           <textarea
             ref={textareaRef}
             value={textAnn.text}
@@ -334,7 +327,6 @@ const TextAnnotationItem: React.FC<{
             rows={1}
           />
         ) : (
-          /* Formatted Typography View (H1 at 20px bold, H2 at 16px bold, body at 14px) */
           <div
             onDoubleClick={(e) => {
               e.stopPropagation();
@@ -427,10 +419,8 @@ const TextAnnotationItem: React.FC<{
         )}
       </div>
 
-      {/* Resize Handles (Visible when selected) */}
       {isSelected && (
         <>
-          {/* Right Border Handle (Horizontal width resizing) */}
           <div
             onPointerDown={onStartResize}
             className="absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-8 bg-white border-2 border-[#0071E3] rounded-full flex items-center justify-center cursor-ew-resize shadow-md hover:scale-110 active:scale-110 transition z-30"
@@ -439,7 +429,6 @@ const TextAnnotationItem: React.FC<{
             <div className="w-0.5 h-3 bg-[#0071E3] rounded-full" />
           </div>
 
-          {/* Bottom-Right Corner Handle */}
           <div
             onPointerDown={onStartResize}
             className="absolute -bottom-2 -right-2 w-5 h-5 bg-[#0071E3] text-white rounded-full flex items-center justify-center cursor-se-resize shadow-md hover:scale-110 active:scale-110 transition z-30"
@@ -453,7 +442,7 @@ const TextAnnotationItem: React.FC<{
   );
 };
 
-// Sub-component for inserted Image or Screenshot
+// Sub-component for inserted Image or Screenshot or Stamp
 const ImageAnnotationItem: React.FC<{
   imgAnn: ImageAnnotation;
   pageWidth: number;
@@ -530,8 +519,8 @@ const ImageAnnotationItem: React.FC<{
       onPointerDown={onStartDrag}
       className={`pointer-events-auto group cursor-move select-none ${
         isSelected
-          ? 'ring-2 ring-[#0071E3] ring-offset-2 rounded-xl shadow-2xl bg-blue-50/20'
-          : 'hover:ring-1 hover:ring-blue-300 rounded-xl hover:bg-black/5'
+          ? 'ring-2 ring-[#0071E3] ring-offset-2 rounded-xl shadow-2xl bg-blue-50/20 z-20'
+          : 'hover:ring-1 hover:ring-blue-300 rounded-xl hover:bg-black/5 z-10'
       }`}
     >
       <img
@@ -541,13 +530,11 @@ const ImageAnnotationItem: React.FC<{
         draggable={false}
       />
 
-      {/* Floating Toolbar when Selected */}
       {isSelected && (
         <div
           className="absolute -top-11 left-0 flex items-center gap-1.5 bg-[#1D1D1F] text-white px-2.5 py-1.5 rounded-xl shadow-2xl text-xs z-30 select-none whitespace-nowrap"
           onPointerDown={(e) => e.stopPropagation()}
         >
-          {/* Proportional / Free Scale Toggle */}
           <button
             onClick={toggleAspectLock}
             className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition ${
@@ -563,7 +550,6 @@ const ImageAnnotationItem: React.FC<{
 
           <div className="w-[1px] h-3.5 bg-white/20" />
 
-          {/* Quick Scale Buttons */}
           <div className="flex items-center gap-1 bg-white/10 px-1.5 py-0.5 rounded-lg">
             <button
               onClick={() => adjustScale(0.85)}
@@ -584,18 +570,16 @@ const ImageAnnotationItem: React.FC<{
 
           <div className="w-[1px] h-3.5 bg-white/20" />
 
-          {/* Duplicate button */}
           {onDuplicate && (
             <button
               onClick={onDuplicate}
               className="p-1 hover:bg-white/20 rounded text-gray-300 hover:text-white transition"
-              title="Bild duplizieren"
+              title="Duplizieren"
             >
               <Copy size={13} />
             </button>
           )}
 
-          {/* Delete button */}
           <button
             onClick={onDelete}
             className="p-1 hover:bg-red-500 rounded text-red-300 hover:text-white transition"
@@ -606,10 +590,8 @@ const ImageAnnotationItem: React.FC<{
         </div>
       )}
 
-      {/* Resize Handles (Visible when Selected) */}
       {isSelected && (
         <>
-          {/* Right Handle (Width) */}
           <div
             onPointerDown={onStartRightResize}
             className="absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-8 bg-white border-2 border-[#0071E3] rounded-full flex items-center justify-center cursor-ew-resize shadow-md hover:scale-110 active:scale-110 transition z-30"
@@ -618,7 +600,6 @@ const ImageAnnotationItem: React.FC<{
             <div className="w-0.5 h-3 bg-[#0071E3] rounded-full" />
           </div>
 
-          {/* Bottom Handle (Height) */}
           <div
             onPointerDown={onStartBottomResize}
             className="absolute left-1/2 -bottom-2 -translate-x-1/2 w-8 h-4 bg-white border-2 border-[#0071E3] rounded-full flex items-center justify-center cursor-ns-resize shadow-md hover:scale-110 active:scale-110 transition z-30"
@@ -627,7 +608,6 @@ const ImageAnnotationItem: React.FC<{
             <div className="h-0.5 w-3 bg-[#0071E3] rounded-full" />
           </div>
 
-          {/* Bottom-Right Corner Handle (Primary Resize) */}
           <div
             onPointerDown={onStartCornerResize}
             className="absolute -bottom-2 -right-2 w-6 h-6 bg-[#0071E3] text-white rounded-full flex items-center justify-center cursor-se-resize shadow-lg hover:scale-125 active:scale-125 transition z-30 ring-2 ring-white"
@@ -663,9 +643,9 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     initialAnnY: number;
   } | null>(null);
 
-  // Resizing state for Signatures
-  const [resizingSigId, setResizingSigId] = useState<string | null>(null);
-  const [resizeSigStartPos, setResizeSigStartPos] = useState<{
+  // Resizing state for Signatures / Boxes (Highlight, Redaction, Shape)
+  const [resizingBoxId, setResizingBoxId] = useState<string | null>(null);
+  const [resizeBoxStartPos, setResizeBoxStartPos] = useState<{
     x: number;
     y: number;
     initialW: number;
@@ -694,7 +674,16 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   const pageAnnotations = annotations.filter((a) => a.pageNumber === pageNumber);
 
   // Start dragging annotation
-  const handlePointerDownDrag = (e: React.PointerEvent, ann: TextAnnotation | SignatureAnnotation | ImageAnnotation) => {
+  const handlePointerDownDrag = (
+    e: React.PointerEvent,
+    ann:
+      | TextAnnotation
+      | SignatureAnnotation
+      | ImageAnnotation
+      | HighlightAnnotation
+      | RedactionAnnotation
+      | ShapeAnnotation
+  ) => {
     e.stopPropagation();
     onSelectAnnotation(ann.id);
     setDraggingId(ann.id);
@@ -719,12 +708,15 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
-  // Start resizing signature
-  const handlePointerDownSigResize = (e: React.PointerEvent, ann: SignatureAnnotation) => {
+  // Start resizing generic 2D box (Signature, Highlight, Redaction, Shape)
+  const handlePointerDownBoxResize = (
+    e: React.PointerEvent,
+    ann: SignatureAnnotation | HighlightAnnotation | RedactionAnnotation | ShapeAnnotation
+  ) => {
     e.stopPropagation();
     onSelectAnnotation(ann.id);
-    setResizingSigId(ann.id);
-    setResizeSigStartPos({
+    setResizingBoxId(ann.id);
+    setResizeBoxStartPos({
       x: e.clientX,
       y: e.clientY,
       initialW: ann.width,
@@ -765,10 +757,10 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       if (!ann || ann.type === 'drawing') return;
 
       const annWidth = (ann as any).width || 0.2;
-      const annHeight = (ann as any).height || 0.05;
+      const annHeight = (ann as any).height || 0.04;
 
-      const newX = Math.max(0.01, Math.min(0.99 - annWidth, dragStartPos.initialAnnX + deltaX));
-      const newY = Math.max(0.01, Math.min(0.99 - annHeight, dragStartPos.initialAnnY + deltaY));
+      const newX = Math.max(0.005, Math.min(0.995 - annWidth, dragStartPos.initialAnnX + deltaX));
+      const newY = Math.max(0.005, Math.min(0.995 - annHeight, dragStartPos.initialAnnY + deltaY));
 
       onUpdateAnnotation({
         ...ann,
@@ -787,22 +779,30 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         ...ann,
         width: newW,
       });
-    } else if (resizingSigId && resizeSigStartPos) {
+    } else if (resizingBoxId && resizeBoxStartPos) {
       e.preventDefault();
-      const deltaX = (e.clientX - resizeSigStartPos.x) / pageWidth;
-      const deltaY = (e.clientY - resizeSigStartPos.y) / pageHeight;
+      const deltaX = (e.clientX - resizeBoxStartPos.x) / pageWidth;
+      const deltaY = (e.clientY - resizeBoxStartPos.y) / pageHeight;
 
-      const ann = annotations.find((a) => a.id === resizingSigId) as SignatureAnnotation | undefined;
-      if (!ann || ann.type !== 'signature') return;
+      const ann = annotations.find((a) => a.id === resizingBoxId) as
+        | SignatureAnnotation
+        | HighlightAnnotation
+        | RedactionAnnotation
+        | ShapeAnnotation
+        | undefined;
+      if (!ann) return;
 
-      const newW = Math.max(0.05, Math.min(0.95 - ann.x, resizeSigStartPos.initialW + deltaX));
-      const newH = Math.max(0.02, Math.min(0.95 - ann.y, resizeSigStartPos.initialH + deltaY));
+      const minW = ann.type === 'shape' ? 0.025 : 0.04;
+      const minH = ann.type === 'highlight' || ann.type === 'redaction' ? 0.015 : 0.025;
+
+      const newW = Math.max(minW, Math.min(0.98 - ann.x, resizeBoxStartPos.initialW + deltaX));
+      const newH = Math.max(minH, Math.min(0.98 - ann.y, resizeBoxStartPos.initialH + deltaY));
 
       onUpdateAnnotation({
         ...ann,
         width: newW,
         height: newH,
-      });
+      } as any);
     } else if (resizingImage) {
       e.preventDefault();
       const deltaX = (e.clientX - resizingImage.startX) / pageWidth;
@@ -860,12 +860,12 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       setResizingTextId(null);
       setResizeTextStartPos(null);
     }
-    if (resizingSigId) {
+    if (resizingBoxId) {
       try {
         (e.target as HTMLElement).releasePointerCapture(e.pointerId);
       } catch (_) {}
-      setResizingSigId(null);
-      setResizeSigStartPos(null);
+      setResizingBoxId(null);
+      setResizeBoxStartPos(null);
     }
     if (resizingImage) {
       try {
@@ -896,7 +896,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
               onSelect={() => onSelectAnnotation(ann.id)}
               onUpdate={(updated) => onUpdateAnnotation(updated)}
               onDelete={() => onDeleteAnnotation(ann.id)}
-              onDuplicate={() => onDuplicateAnnotation && onDuplicateAnnotation(ann as TextAnnotation)}
+              onDuplicate={() => onDuplicateAnnotation && onDuplicateAnnotation(ann)}
               onStartDrag={(e) => handlePointerDownDrag(e, ann as TextAnnotation)}
               onStartResize={(e) => handlePointerDownTextResize(e, ann as TextAnnotation)}
             />
@@ -914,12 +914,317 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
               onSelect={() => onSelectAnnotation(ann.id)}
               onUpdate={(updated) => onUpdateAnnotation(updated)}
               onDelete={() => onDeleteAnnotation(ann.id)}
-              onDuplicate={() => onDuplicateAnnotation && onDuplicateAnnotation(ann as ImageAnnotation)}
+              onDuplicate={() => onDuplicateAnnotation && onDuplicateAnnotation(ann)}
               onStartDrag={(e) => handlePointerDownDrag(e, ann as ImageAnnotation)}
               onStartCornerResize={(e) => handlePointerDownImageResize(e, ann as ImageAnnotation, 'corner')}
               onStartRightResize={(e) => handlePointerDownImageResize(e, ann as ImageAnnotation, 'right')}
               onStartBottomResize={(e) => handlePointerDownImageResize(e, ann as ImageAnnotation, 'bottom')}
             />
+          );
+        }
+
+        if (ann.type === 'highlight') {
+          const hl = ann as HighlightAnnotation;
+          const leftPx = hl.x * pageWidth;
+          const topPx = hl.y * pageHeight;
+          const widthPx = hl.width * pageWidth;
+          const heightPx = hl.height * pageHeight;
+
+          return (
+            <div
+              key={hl.id}
+              style={{
+                position: 'absolute',
+                left: `${leftPx}px`,
+                top: `${topPx}px`,
+                width: `${widthPx}px`,
+                height: `${heightPx}px`,
+                backgroundColor: hl.color || '#FACC15',
+                opacity: 0.42,
+                mixBlendMode: 'multiply',
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectAnnotation(hl.id);
+              }}
+              onPointerDown={(e) => handlePointerDownDrag(e, hl)}
+              className={`pointer-events-auto cursor-move rounded-sm ${
+                isSelected ? 'ring-2 ring-[#0071E3] ring-offset-1 z-20' : 'hover:ring-1 hover:ring-amber-500'
+              }`}
+            >
+              {isSelected && (
+                <>
+                  <div
+                    style={{ opacity: 2.4 }}
+                    className="absolute -top-10 left-0 flex items-center gap-1.5 bg-[#1D1D1F] text-white px-2 py-1 rounded-xl shadow-xl text-xs z-30 whitespace-nowrap"
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    {['#FACC15', '#4ADE80', '#F472B6', '#60A5FA'].map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => onUpdateAnnotation({ ...hl, color: c })}
+                        style={{ backgroundColor: c }}
+                        className={`w-4 h-4 rounded-full border border-white/60 ${
+                          hl.color === c ? 'scale-125 ring-2 ring-white' : ''
+                        }`}
+                      />
+                    ))}
+                    <div className="w-[1px] h-3.5 bg-white/20 mx-0.5" />
+                    {onDuplicateAnnotation && (
+                      <button
+                        onClick={() => onDuplicateAnnotation(hl)}
+                        className="p-1 hover:bg-white/20 rounded"
+                        title="Duplizieren"
+                      >
+                        <Copy size={12} />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => onDeleteAnnotation(hl.id)}
+                      className="p-1 hover:bg-red-500 rounded text-red-300 hover:text-white"
+                      title="Löschen"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                  <div
+                    onPointerDown={(e) => handlePointerDownBoxResize(e, hl)}
+                    className="absolute -bottom-2 -right-2 w-4 h-4 bg-[#0071E3] rounded-full cursor-se-resize ring-2 ring-white shadow z-30"
+                  />
+                </>
+              )}
+            </div>
+          );
+        }
+
+        if (ann.type === 'redaction') {
+          const red = ann as RedactionAnnotation;
+          const leftPx = red.x * pageWidth;
+          const topPx = red.y * pageHeight;
+          const widthPx = red.width * pageWidth;
+          const heightPx = red.height * pageHeight;
+
+          return (
+            <div
+              key={red.id}
+              style={{
+                position: 'absolute',
+                left: `${leftPx}px`,
+                top: `${topPx}px`,
+                width: `${widthPx}px`,
+                height: `${heightPx}px`,
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectAnnotation(red.id);
+              }}
+              onPointerDown={(e) => handlePointerDownDrag(e, red)}
+              className={`pointer-events-auto cursor-move bg-black flex items-center justify-center ${
+                isSelected
+                  ? 'ring-2 ring-red-500 ring-offset-1 z-20'
+                  : 'border border-red-500/60 hover:ring-1 hover:ring-red-400 z-10'
+              }`}
+              title="DSGVO-Schwärzung: Darunterliegender Text wird beim Export unwiderruflich entfernt"
+            >
+              <span className="text-[9px] font-mono font-bold text-red-400/80 uppercase tracking-wider truncate px-1 pointer-events-none">
+                {heightPx > 14 && widthPx > 55 ? 'DSGVO-SCHWÄRZUNG' : ''}
+              </span>
+
+              {isSelected && (
+                <>
+                  <div
+                    className="absolute -top-10 left-0 flex items-center gap-1.5 bg-[#1D1D1F] text-white px-2.5 py-1 rounded-xl shadow-xl text-[11px] z-30 whitespace-nowrap"
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <ShieldAlert size={12} className="text-red-400" />
+                    <span className="font-semibold text-red-200">Echte DSGVO-Schwärzung</span>
+                    <div className="w-[1px] h-3.5 bg-white/20 mx-0.5" />
+                    {onDuplicateAnnotation && (
+                      <button
+                        onClick={() => onDuplicateAnnotation(red)}
+                        className="p-1 hover:bg-white/20 rounded"
+                        title="Duplizieren"
+                      >
+                        <Copy size={12} />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => onDeleteAnnotation(red.id)}
+                      className="p-1 hover:bg-red-500 rounded text-red-300 hover:text-white"
+                      title="Löschen"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                  <div
+                    onPointerDown={(e) => handlePointerDownBoxResize(e, red)}
+                    className="absolute -bottom-2 -right-2 w-4 h-4 bg-red-600 rounded-full cursor-se-resize ring-2 ring-white shadow z-30"
+                  />
+                </>
+              )}
+            </div>
+          );
+        }
+
+        if (ann.type === 'shape') {
+          const sh = ann as ShapeAnnotation;
+          const leftPx = sh.x * pageWidth;
+          const topPx = sh.y * pageHeight;
+          const widthPx = sh.width * pageWidth;
+          const heightPx = sh.height * pageHeight;
+          const strokeC = sh.color || '#0071E3';
+          const sw = sh.strokeWidth || 3;
+
+          return (
+            <div
+              key={sh.id}
+              style={{
+                position: 'absolute',
+                left: `${leftPx}px`,
+                top: `${topPx}px`,
+                width: `${widthPx}px`,
+                height: `${heightPx}px`,
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectAnnotation(sh.id);
+              }}
+              onPointerDown={(e) => handlePointerDownDrag(e, sh)}
+              className={`pointer-events-auto cursor-move ${
+                isSelected ? 'ring-2 ring-[#0071E3] ring-offset-2 rounded-lg z-20' : 'hover:ring-1 hover:ring-blue-300 rounded z-10'
+              }`}
+            >
+              <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                className="w-full h-full overflow-visible pointer-events-none"
+              >
+                {sh.shapeType === 'check' && (
+                  <path
+                    d="M 16 54 L 42 80 L 85 20"
+                    fill="none"
+                    stroke={strokeC}
+                    strokeWidth={sw * 3.2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                )}
+                {sh.shapeType === 'cross' && (
+                  <path
+                    d="M 20 20 L 80 80 M 80 20 L 20 80"
+                    fill="none"
+                    stroke={strokeC}
+                    strokeWidth={sw * 3.2}
+                    strokeLinecap="round"
+                  />
+                )}
+                {sh.shapeType === 'rect' && (
+                  <rect
+                    x="4"
+                    y="4"
+                    width="92"
+                    height="92"
+                    fill="none"
+                    stroke={strokeC}
+                    strokeWidth={sw * 2}
+                    rx="4"
+                  />
+                )}
+                {sh.shapeType === 'circle' && (
+                  <ellipse
+                    cx="50"
+                    cy="50"
+                    rx="46"
+                    ry="46"
+                    fill="none"
+                    stroke={strokeC}
+                    strokeWidth={sw * 2}
+                  />
+                )}
+                {sh.shapeType === 'arrow' && (
+                  <path
+                    d="M 6 50 L 92 50 M 68 25 L 92 50 L 68 75"
+                    fill="none"
+                    stroke={strokeC}
+                    strokeWidth={sw * 2.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                )}
+              </svg>
+
+              {isSelected && (
+                <>
+                  <div
+                    className="absolute -top-10 left-0 flex items-center gap-1.5 bg-[#1D1D1F] text-white px-2 py-1 rounded-xl shadow-xl text-xs z-30 whitespace-nowrap"
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    {['#107C41', '#E02020', '#0071E3', '#000000', '#D97706'].map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => onUpdateAnnotation({ ...sh, color: c })}
+                        style={{ backgroundColor: c }}
+                        className={`w-3.5 h-3.5 rounded-full border border-white/60 ${
+                          sh.color === c ? 'scale-125 ring-2 ring-white' : ''
+                        }`}
+                      />
+                    ))}
+                    <div className="w-[1px] h-3.5 bg-white/20 mx-0.5" />
+                    {onDuplicateAnnotation && (
+                      <button
+                        onClick={() => onDuplicateAnnotation(sh)}
+                        className="p-1 hover:bg-white/20 rounded"
+                        title="Duplizieren"
+                      >
+                        <Copy size={12} />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => onDeleteAnnotation(sh.id)}
+                      className="p-1 hover:bg-red-500 rounded text-red-300 hover:text-white"
+                      title="Löschen"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                  <div
+                    onPointerDown={(e) => handlePointerDownBoxResize(e, sh)}
+                    className="absolute -bottom-2 -right-2 w-4 h-4 bg-[#0071E3] rounded-full cursor-se-resize ring-2 ring-white shadow z-30"
+                  />
+                </>
+              )}
+            </div>
+          );
+        }
+
+        if (ann.type === 'drawing') {
+          const draw = ann as FreehandDrawingAnnotation;
+          if (!draw.points || draw.points.length < 2) return null;
+          const pointsStr = draw.points
+            .map((p) => `${p.x * pageWidth},${p.y * pageHeight}`)
+            .join(' ');
+
+          return (
+            <svg
+              key={draw.id}
+              className="absolute inset-0 w-full h-full pointer-events-none z-10"
+            >
+              <polyline
+                points={pointsStr}
+                fill="none"
+                stroke={draw.color || '#0071E3'}
+                strokeWidth={draw.strokeWidth || 2.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectAnnotation(draw.id);
+                }}
+                className={`pointer-events-auto cursor-pointer ${
+                  isSelected ? 'filter drop-shadow-[0_0_4px_rgba(0,113,227,0.8)]' : ''
+                }`}
+              />
+            </svg>
           );
         }
 
@@ -947,8 +1252,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
               onPointerDown={(e) => handlePointerDownDrag(e, sigAnn)}
               className={`pointer-events-auto group cursor-move select-none p-1 ${
                 isSelected
-                  ? 'border-2 border-[#0071E3] rounded-lg shadow-lg bg-blue-50/10'
-                  : 'hover:border hover:border-blue-300'
+                  ? 'border-2 border-[#0071E3] rounded-lg shadow-lg bg-blue-50/10 z-20'
+                  : 'hover:border hover:border-blue-300 z-10'
               }`}
             >
               <img
@@ -957,7 +1262,6 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                 className="w-full h-full object-contain pointer-events-none"
               />
 
-              {/* Delete button when selected */}
               {isSelected && (
                 <button
                   onClick={(e) => {
@@ -971,10 +1275,9 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                 </button>
               )}
 
-              {/* Resize Handle at bottom right */}
               {isSelected && (
                 <div
-                  onPointerDown={(e) => handlePointerDownSigResize(e, sigAnn)}
+                  onPointerDown={(e) => handlePointerDownBoxResize(e, sigAnn)}
                   className="absolute -bottom-2 -right-2 w-5 h-5 bg-[#0071E3] text-white rounded-full flex items-center justify-center cursor-nwse-resize shadow-md hover:scale-110 transition z-30"
                   title="Größe anpassen"
                 >

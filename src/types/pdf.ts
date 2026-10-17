@@ -39,6 +39,41 @@ export interface ImageAnnotation {
   name?: string;
 }
 
+export interface HighlightAnnotation {
+  id: string;
+  type: 'highlight';
+  pageNumber: number; // 1-indexed
+  x: number; // normalized 0..1
+  y: number; // normalized 0..1
+  width: number; // normalized 0..1
+  height: number; // normalized 0..1
+  color: string; // e.g. '#FACC15', '#4ADE80', '#F472B6', '#60A5FA'
+}
+
+export interface RedactionAnnotation {
+  id: string;
+  type: 'redaction';
+  pageNumber: number; // 1-indexed
+  x: number; // normalized 0..1
+  y: number; // normalized 0..1
+  width: number; // normalized 0..1
+  height: number; // normalized 0..1
+  label?: string; // optional label like 'DSGVO' or 'Geschwärzt'
+}
+
+export interface ShapeAnnotation {
+  id: string;
+  type: 'shape';
+  pageNumber: number; // 1-indexed
+  shapeType: 'check' | 'cross' | 'rect' | 'circle' | 'arrow';
+  x: number; // normalized 0..1
+  y: number; // normalized 0..1
+  width: number; // normalized 0..1
+  height: number; // normalized 0..1
+  color: string; // hex color
+  strokeWidth?: number;
+}
+
 export interface FreehandDrawingAnnotation {
   id: string;
   type: 'drawing';
@@ -48,7 +83,14 @@ export interface FreehandDrawingAnnotation {
   strokeWidth: number;
 }
 
-export type Annotation = TextAnnotation | SignatureAnnotation | FreehandDrawingAnnotation | ImageAnnotation;
+export type Annotation =
+  | TextAnnotation
+  | SignatureAnnotation
+  | FreehandDrawingAnnotation
+  | ImageAnnotation
+  | HighlightAnnotation
+  | RedactionAnnotation
+  | ShapeAnnotation;
 
 export interface PageMetadata {
   pageNumber: number;
@@ -66,4 +108,40 @@ export interface MergePageItem {
   rotation: number; // 0, 90, 180, 270
   thumbnailUrl?: string;
   fileBytes: ArrayBuffer;
+}
+
+export interface PdfFormFieldItem {
+  name: string;
+  type: 'text' | 'checkbox' | 'dropdown' | 'optionlist' | 'radio' | 'unknown';
+  value: string | boolean;
+  options?: string[];
+  readOnly?: boolean;
+}
+
+export interface PdfDocumentMetadata {
+  title: string;
+  author: string;
+  subject: string;
+  keywords: string;
+  creator: string;
+  producer: string;
+}
+
+export interface PageDecorationsConfig {
+  // Page numbers / Bates
+  enablePageNumbers: boolean;
+  pageNumberFormat: 'page_x_of_y' | 'x_slash_y' | 'only_x' | 'bates';
+  batesPrefix?: string;
+  batesStartNumber?: number;
+  pageNumberPosition: 'bottom-right' | 'bottom-center' | 'bottom-left' | 'top-right';
+  // Header / Footer
+  headerLeft?: string;
+  headerCenter?: string;
+  headerRight?: string;
+  footerLeft?: string;
+  // Watermark
+  enableWatermark: boolean;
+  watermarkText: string;
+  watermarkColor: string;
+  watermarkOpacity: number; // 0.05 .. 0.5
 }

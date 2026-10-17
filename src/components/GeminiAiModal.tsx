@@ -17,6 +17,9 @@ import {
   AlertCircle,
   Settings,
   RefreshCw,
+  Table,
+  Download,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   summarizeDocument,
@@ -25,11 +28,21 @@ import {
   rewriteText,
   generateNewText,
   askDocumentQuestion,
+  extractBusinessDataWithAi,
+  downloadCsvForExcel,
   ChatMessage,
   formatMarkdownToCleanText,
 } from '../lib/geminiService';
 import { paginateDocumentForA4 } from '../lib/a4Pagination';
-import { hasKiZugang, getZugangscode, setZugangscode, istZugangscode, pruefeZugangscode, getActiveGeminiApiKey, APP_MARKETPLACE_URL } from '../config';
+import {
+  hasKiZugang,
+  getZugangscode,
+  setZugangscode,
+  istZugangscode,
+  pruefeZugangscode,
+  getActiveGeminiApiKey,
+  APP_MARKETPLACE_URL,
+} from '../config';
 import { Annotation } from '../types/pdf';
 
 interface GeminiAiModalProps {
@@ -44,7 +57,7 @@ interface GeminiAiModalProps {
   onReplaceCurrentPage?: (text: string) => void;
 }
 
-type TabType = 'summary' | 'grammar' | 'translate' | 'rewrite' | 'chat';
+type TabType = 'summary' | 'extract' | 'grammar' | 'translate' | 'rewrite' | 'chat';
 
 export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
   isOpen,
@@ -61,11 +74,15 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
   const [scope, setScope] = useState<'all' | 'current'>('all');
   const [loading, setLoading] = useState(false);
   const [resultText, setResultText] = useState<string>('');
+  const [csvResult, setCsvResult] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   // Summary options
   const [summaryStyle, setSummaryStyle] = useState<'bullet' | 'short' | 'detailed'>('bullet');
+
+  // Business Data & CSV Extraction options
+  const [extractMode, setExtractMode] = useState<'invoice' | 'tables' | 'privacy_audit'>('invoice');
 
   // Translation options
   const [targetLang, setTargetLang] = useState<string>('Englisch');
@@ -103,11 +120,38 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
     setLoading(true);
     setError(null);
     setResultText('');
+    setCsvResult('');
     try {
       const res = await summarizeDocument(pdfBytes, targetPageNum, summaryStyle, annotations);
       setResultText(res);
     } catch (err: any) {
       setError(err?.message || 'Fehler beim Erstellen der Zusammenfassung.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 1b. Run Business Extraction / DSGVO Audit
+  const handleRunExtract = async () => {
+    if (!pdfBytes) {
+      setError('Bitte zuerst ein PDF-Dokument öffnen.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setResultText('');
+    setCsvResult('');
+    try {
+      const { reportText, csvData } = await extractBusinessDataWithAi(
+        pdfBytes,
+        extractMode,
+        targetPageNum,
+        annotations
+      );
+      setResultText(reportText);
+      setCsvResult(csvData);
+    } catch (err: any) {
+      setError(err?.message || 'Fehler beim Auslesen der Daten.');
     } finally {
       setLoading(false);
     }
@@ -122,6 +166,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
     setLoading(true);
     setError(null);
     setResultText('');
+    setCsvResult('');
     try {
       const res = await checkGrammarAndSpelling(pdfBytes, targetPageNum, annotations);
       setResultText(res);
@@ -141,6 +186,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
     setLoading(true);
     setError(null);
     setResultText('');
+    setCsvResult('');
     try {
       const res = await translateDocument(pdfBytes, targetLang, targetPageNum, annotations);
       setResultText(res);
@@ -156,6 +202,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
     setLoading(true);
     setError(null);
     setResultText('');
+    setCsvResult('');
     try {
       let res = '';
       if (rewriteMode === 'new') {
@@ -260,10 +307,10 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold text-[#1D1D1F]">Gemini KI-Assistent</h2>
                 <span className="text-[10px] font-semibold px-2 py-0.5 bg-gradient-to-r from-blue-100 to-indigo-100 text-indigo-800 rounded-full">
-                  Flash 3.7
+                  Business Suite
                 </span>
               </div>
-              <p className="text-xs text-gray-500">Intelligente Dokumenten-Analyse & Textgenerierung</p>
+              <p className="text-xs text-gray-500">Dokumenten-Analyse, Excel-Extraktion & Textgenerierung</p>
             </div>
           </div>
 
@@ -349,64 +396,76 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
         )}
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-gray-200 bg-white px-3 gap-1 overflow-x-auto select-none">
+        <div className="flex border-b border-gray-200 bg-white px-3 gap-0.5 overflow-x-auto select-none">
           <button
             onClick={() => setActiveTab('summary')}
-            className={`py-3 px-3 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition shrink-0 ${
+            className={`py-3 px-2.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition shrink-0 ${
               activeTab === 'summary'
                 ? 'border-[#0071E3] text-[#0071E3]'
                 : 'border-transparent text-gray-500 hover:text-gray-900'
             }`}
           >
-            <FileText size={15} />
+            <FileText size={14} />
             <span>Zusammenfassung</span>
           </button>
 
           <button
+            onClick={() => setActiveTab('extract')}
+            className={`py-3 px-2.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition shrink-0 ${
+              activeTab === 'extract'
+                ? 'border-[#0071E3] text-[#0071E3]'
+                : 'border-transparent text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            <Table size={14} />
+            <span>Daten & Excel</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('grammar')}
-            className={`py-3 px-3 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition shrink-0 ${
+            className={`py-3 px-2.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition shrink-0 ${
               activeTab === 'grammar'
                 ? 'border-[#0071E3] text-[#0071E3]'
                 : 'border-transparent text-gray-500 hover:text-gray-900'
             }`}
           >
-            <CheckCircle2 size={15} />
-            <span>Korrekturlesen</span>
+            <CheckCircle2 size={14} />
+            <span>Korrektur</span>
           </button>
 
           <button
             onClick={() => setActiveTab('translate')}
-            className={`py-3 px-3 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition shrink-0 ${
+            className={`py-3 px-2.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition shrink-0 ${
               activeTab === 'translate'
                 ? 'border-[#0071E3] text-[#0071E3]'
                 : 'border-transparent text-gray-500 hover:text-gray-900'
             }`}
           >
-            <Globe size={15} />
+            <Globe size={14} />
             <span>Übersetzen</span>
           </button>
 
           <button
             onClick={() => setActiveTab('rewrite')}
-            className={`py-3 px-3 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition shrink-0 ${
+            className={`py-3 px-2.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition shrink-0 ${
               activeTab === 'rewrite'
                 ? 'border-[#0071E3] text-[#0071E3]'
                 : 'border-transparent text-gray-500 hover:text-gray-900'
             }`}
           >
-            <PenLine size={15} />
-            <span>Umschreiben & Text</span>
+            <PenLine size={14} />
+            <span>Text & Verträge</span>
           </button>
 
           <button
             onClick={() => setActiveTab('chat')}
-            className={`py-3 px-3 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition shrink-0 ${
+            className={`py-3 px-2.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition shrink-0 ${
               activeTab === 'chat'
                 ? 'border-[#0071E3] text-[#0071E3]'
                 : 'border-transparent text-gray-500 hover:text-gray-900'
             }`}
           >
-            <MessageSquare size={15} />
+            <MessageSquare size={14} />
             <span>PDF-Chat</span>
           </button>
         </div>
@@ -495,6 +554,78 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
             </div>
           )}
 
+          {/* TAB 1b: DATEN, RECHNUNGEN & EXCEL-EXPORT */}
+          {activeTab === 'extract' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                  Was soll aus dem PDF ausgelesen werden?
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <button
+                    onClick={() => setExtractMode('invoice')}
+                    className={`p-3 rounded-2xl border text-left transition ${
+                      extractMode === 'invoice'
+                        ? 'border-[#0071E3] bg-blue-50/50 text-[#0071E3] font-semibold'
+                        : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                    }`}
+                  >
+                    <div className="text-xs font-bold mb-0.5">Rechnung & Beleg</div>
+                    <div className="text-[10px] text-gray-500">
+                      Rechnungsnr., Beträge, IBAN & Positionen ➔ Excel/CSV
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setExtractMode('tables')}
+                    className={`p-3 rounded-2xl border text-left transition ${
+                      extractMode === 'tables'
+                        ? 'border-[#0071E3] bg-blue-50/50 text-[#0071E3] font-semibold'
+                        : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                    }`}
+                  >
+                    <div className="text-xs font-bold mb-0.5">Tabellen & Listen</div>
+                    <div className="text-[10px] text-gray-500">
+                      Alle Tabellen im PDF spaltengetreu nach Excel/CSV
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setExtractMode('privacy_audit')}
+                    className={`p-3 rounded-2xl border text-left transition ${
+                      extractMode === 'privacy_audit'
+                        ? 'border-[#0071E3] bg-blue-50/50 text-[#0071E3] font-semibold'
+                        : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                    }`}
+                  >
+                    <div className="text-xs font-bold mb-0.5 flex items-center gap-1">
+                      <ShieldAlert size={12} />
+                      <span>DSGVO & Risiko-Check</span>
+                    </div>
+                    <div className="text-[10px] text-gray-500">
+                      Sensible Daten zum Schwärzen & Vertragsklauseln prüfen
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <button
+                onClick={handleRunExtract}
+                disabled={loading || !hasApiKey}
+                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold text-sm rounded-xl shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {loading ? <Loader2 size={16} className="animate-spin" /> : <Table size={16} />}
+                <span>
+                  {extractMode === 'invoice'
+                    ? 'Rechnungsdaten & Positionen auslesen'
+                    : extractMode === 'tables'
+                    ? 'Tabellen für Excel extrahieren'
+                    : 'DSGVO- & Vertragsrisiko-Prüfung starten'}
+                </span>
+              </button>
+            </div>
+          )}
+
           {/* TAB 2: RECHTSCHREIBUNG & GRAMMATIK */}
           {activeTab === 'grammar' && (
             <div className="space-y-4">
@@ -520,8 +651,17 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
                   Zielsprache auswählen
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {['Englisch', 'Deutsch', 'Französisch', 'Spanisch', 'Italienisch', 'Niederländisch'].map((lang) => (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    'Englisch',
+                    'Deutsch',
+                    'Französisch',
+                    'Spanisch',
+                    'Italienisch',
+                    'Niederländisch',
+                    'Polnisch',
+                    'Türkisch',
+                  ].map((lang) => (
                     <button
                       key={lang}
                       onClick={() => setTargetLang(lang)}
@@ -737,7 +877,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
             </div>
           )}
 
-          {/* Result Presentation Box (For Summary, Grammar, Translate, Rewrite) */}
+          {/* Result Presentation Box */}
           {activeTab !== 'chat' && resultText && (() => {
             const cleanResult = formatMarkdownToCleanText(resultText);
             const slices = paginateDocumentForA4(cleanResult, 14);
@@ -751,6 +891,22 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
                     Ergebnis von Gemini
                   </span>
                   <div className="flex flex-wrap items-center gap-2">
+                    {csvResult && (
+                      <button
+                        onClick={() =>
+                          downloadCsvForExcel(
+                            csvResult,
+                            extractMode === 'invoice' ? 'Rechnungsdaten_Export.csv' : 'Tabellen_Export.csv'
+                          )
+                        }
+                        className="flex items-center gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg transition font-bold shadow-sm"
+                        title="Öffnet sich direkt mit allen Spalten und Umlauten in Microsoft Excel"
+                      >
+                        <Download size={13} />
+                        <span>Als Excel / CSV speichern</span>
+                      </button>
+                    )}
+
                     <button
                       onClick={() => handleCopyText(resultText)}
                       className="flex items-center gap-1 text-xs text-gray-600 hover:text-black bg-gray-100 hover:bg-gray-200 px-2.5 py-1.5 rounded-lg transition font-medium"
@@ -759,7 +915,6 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
                       <span>{copied ? 'Kopiert!' : 'Kopieren'}</span>
                     </button>
 
-                    {/* Replace current page cleanly (Clean A4 replacement, no leftover text underneath) */}
                     {onReplaceCurrentPage && (
                       <button
                         onClick={() => onReplaceCurrentPage(resultText)}
@@ -768,11 +923,6 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
                             ? 'bg-[#0071E3] hover:bg-blue-600 ring-2 ring-blue-400/20'
                             : 'bg-[#0071E3] hover:bg-blue-600'
                         }`}
-                        title={
-                          pageCount > 1
-                            ? `Ersetzt Seite ${currentPage} sauber durch Seite 1 und legt ${pageCount - 1} Folgeseite(n) direkt danach an (keine alten Textreste darunter)`
-                            : `Ersetzt den Inhalt von Seite ${currentPage} vollständig und sauber durch den neuen Text (keine alten Textreste darunter)`
-                        }
                       >
                         <RefreshCw size={13} />
                         <span>
@@ -783,7 +933,6 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
                       </button>
                     )}
 
-                    {/* Append as new dedicated A4 pages */}
                     {onInsertAsNewPage && (
                       <button
                         onClick={() => onInsertAsNewPage(resultText)}
@@ -792,22 +941,19 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
                             ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                             : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
                         }`}
-                        title="Hängt neue saubere DIN A4 Seiten ans Dokumentende an"
                       >
                         <FilePlus size={13} className={activeTab === 'summary' ? 'text-white' : 'text-emerald-600'} />
                         <span>
                           {pageCount > 1
-                            ? `Als ${pageCount} A4-Seiten anfügen (mit Umbruch)`
+                            ? `Als ${pageCount} A4-Seiten anfügen`
                             : 'Als neue A4-Seite anfügen'}
                         </span>
                       </button>
                     )}
 
-                    {/* Insert as floating text box on current page */}
                     <button
                       onClick={() => onInsertTextIntoPage(resultText)}
                       className="flex items-center gap-1 text-xs text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-300/70 px-2.5 py-1.5 rounded-lg transition font-medium"
-                      title={`Fügt den Text als Textfeld über den bestehenden Inhalt von Seite ${currentPage} ein (Inhalt bleibt erhalten)`}
                     >
                       <PlusCircle size={13} />
                       <span>Als Textfeld</span>
