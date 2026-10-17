@@ -5,12 +5,14 @@
  */
 
 export interface FormattedLine {
-  type: 'h1' | 'h2' | 'bullet' | 'body' | 'empty';
+  type: 'h1' | 'h2' | 'bullet' | 'numbered' | 'checklist' | 'divider' | 'body' | 'empty';
   text: string;
   fontSize: number;
   isBold: boolean;
   lineHeight: number;
   topGap: number;
+  checked?: boolean;
+  marker?: string;
 }
 
 /**
@@ -20,32 +22,36 @@ export function isHeadingLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
 
+  // Never treat checklists, bullets, or dividers as headings
+  if (/^(\[\s*\]|\[[xX✓✔]\]|☐|☑|•|-|\*)\s*/.test(trimmed)) return false;
+  if (/^[-=_]{3,}$/.test(trimmed)) return false;
+
   // 1. Markdown headings (#, ##, ###)
   if (/^#{1,4}\s+/.test(trimmed)) return true;
 
-  // 2. Numbered section titles (e.g. "1. Kontext", "2.1 Bedingungen", "1.) Vorbereitung")
-  if (/^[0-9]+(\.[0-9]+)*[.)]?\s+[A-Za-zÄÖÜäöü]/.test(trimmed)) return true;
+  // 2. Multi-level numbered section titles (e.g. "1.1 Bedingungen", "2.1.3 Details")
+  if (/^[0-9]+\.[0-9]+(\.[0-9]+)*[.)]?\s+[A-Za-zÄÖÜäöü]/.test(trimmed)) return true;
+
+  // Single-level numbered lines ("1. Punkt") are numbered list items, NOT headings
+  if (/^[0-9]+[.)]\s+/.test(trimmed)) return false;
 
   // 3. Standalone UPPERCASE titles (length >= 4, no digits/bullets at start)
-  if (trimmed === trimmed.toUpperCase() && trimmed.length >= 4 && !/^[0-9•\-\*]/.test(trimmed)) {
+  if (trimmed === trimmed.toUpperCase() && trimmed.length >= 4 && !/^[0-9•\-\*\[]/.test(trimmed)) {
     return true;
   }
 
   // 4. Lines ending with colon, up to 90 chars, not starting with list bullets
-  if (trimmed.endsWith(':') && trimmed.length <= 90 && !/^[•\-\*]/.test(trimmed)) {
+  if (trimmed.endsWith(':') && trimmed.length <= 90 && !/^[•\-\*\[]/.test(trimmed)) {
     return true;
   }
 
   // 5. Standalone title lines without sentence-ending punctuation (no . ! ?)
-  // e.g. "Schlussfolgerung", "Übersicht und Kontext", "Preiskalkulation und Zahlungsbedingungen",
-  // "Wesentliche Rahmendaten des Angebots", "Inklusivleistungen und Versicherungsschutz",
-  // "Wichtige Miet- und Buchungsbedingungen", "Zusatzservice und Informationsmaterial"
   if (
     trimmed.length >= 3 &&
     trimmed.length <= 75 &&
     /^[A-ZÄÖÜ]/.test(trimmed) &&
     !/[.!?]$/.test(trimmed) &&
-    !/^[•\-\*]/.test(trimmed) &&
+    !/^[•\-\*\[]/.test(trimmed) &&
     !trimmed.includes(';') &&
     !trimmed.includes(',')
   ) {
@@ -56,7 +62,7 @@ export function isHeadingLine(line: string): boolean {
 }
 
 /**
- * Classifies a line of text into H1 (20px bold), H2 (16px bold), bullet (14px) or body (14px)
+ * Classifies a line of text into H1, H2, bullet, numbered list, checklist, divider, or body
  */
 export function classifyLine(line: string, baseFontSize: number = 14): FormattedLine {
   const trimmed = line.trim();
@@ -72,38 +78,48 @@ export function classifyLine(line: string, baseFontSize: number = 14): Formatted
     };
   }
 
-  // H1: Markdown # or standalone uppercase title (length > 5, no digits/bullets at start)
-  if (
-    trimmed.startsWith('# ') ||
-    (trimmed === trimmed.toUpperCase() && trimmed.length > 5 && !/^[0-9•\-\*]/.test(trimmed))
-  ) {
-    const clean = trimmed.replace(/^#\s+/, '').trim();
+  // Divider line (---)
+  if (/^[-=_]{3,}$/.test(trimmed)) {
     return {
-      type: 'h1',
-      text: clean,
-      fontSize: 20,
-      isBold: true,
-      lineHeight: 25,
-      topGap: 12,
+      type: 'divider',
+      text: '',
+      fontSize: baseFontSize,
+      isBold: false,
+      lineHeight: baseFontSize * 0.8,
+      topGap: 6,
     };
   }
 
-  // H2: Markdown ## / ###, numbered section headers, or isHeadingLine
-  if (isHeadingLine(trimmed)) {
-    const clean = trimmed.replace(/^###?\s+/, '').trim();
+  // Checklist: [ ] / [x] / ☐ / ☑
+  const uncheckedMatch = trimmed.match(/^(?:\[\s*\]|☐)\s*(.*)$/);
+  if (uncheckedMatch) {
     return {
-      type: 'h2',
-      text: clean,
-      fontSize: 16,
-      isBold: true,
-      lineHeight: 21,
-      topGap: 10,
+      type: 'checklist',
+      checked: false,
+      text: uncheckedMatch[1].trim(),
+      fontSize: baseFontSize,
+      isBold: false,
+      lineHeight: baseFontSize * 1.4,
+      topGap: 3,
     };
   }
 
-  // Bullet list
-  if (trimmed.startsWith('• ') || trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-    const clean = trimmed.replace(/^[*•\-]\s+/, '').trim();
+  const checkedMatch = trimmed.match(/^(?:\[[xX✓✔]\]|☑)\s*(.*)$/);
+  if (checkedMatch) {
+    return {
+      type: 'checklist',
+      checked: true,
+      text: checkedMatch[1].trim(),
+      fontSize: baseFontSize,
+      isBold: false,
+      lineHeight: baseFontSize * 1.4,
+      topGap: 3,
+    };
+  }
+
+  // Bullet list: • / - / *
+  if (trimmed.startsWith('• ') || trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed === '•') {
+    const clean = trimmed.replace(/^[*•\-]\s*/, '').trim();
     return {
       type: 'bullet',
       text: clean,
@@ -111,6 +127,49 @@ export function classifyLine(line: string, baseFontSize: number = 14): Formatted
       isBold: false,
       lineHeight: baseFontSize * 1.35,
       topGap: 2,
+    };
+  }
+
+  // Numbered list: 1. / 2. / 1) / 2)
+  const numberedMatch = trimmed.match(/^([0-9]+[.)])\s+(.*)$/);
+  if (numberedMatch) {
+    return {
+      type: 'numbered',
+      marker: numberedMatch[1],
+      text: numberedMatch[2].trim(),
+      fontSize: baseFontSize,
+      isBold: false,
+      lineHeight: baseFontSize * 1.35,
+      topGap: 2,
+    };
+  }
+
+  // H1: Markdown # or standalone uppercase title (length > 5, no digits/bullets at start)
+  if (
+    trimmed.startsWith('# ') ||
+    (trimmed === trimmed.toUpperCase() && trimmed.length > 5 && !/^[0-9•\-\*\[]/.test(trimmed))
+  ) {
+    const clean = trimmed.replace(/^#\s+/, '').trim();
+    return {
+      type: 'h1',
+      text: clean,
+      fontSize: Math.round(baseFontSize * 1.4),
+      isBold: true,
+      lineHeight: Math.round(baseFontSize * 1.75),
+      topGap: 10,
+    };
+  }
+
+  // H2: Markdown ## / ###, multi-level numbered section headers, or isHeadingLine
+  if (isHeadingLine(trimmed)) {
+    const clean = trimmed.replace(/^###?\s+/, '').trim();
+    return {
+      type: 'h2',
+      text: clean,
+      fontSize: Math.round(baseFontSize * 1.15),
+      isBold: true,
+      lineHeight: Math.round(baseFontSize * 1.5),
+      topGap: 8,
     };
   }
 
@@ -154,12 +213,10 @@ export function calculateLineHeight(
   baseFontSize: number = 14
 ): number {
   const c = classifyLine(rawLine, baseFontSize);
-  if (c.type === 'empty') {
+  if (c.type === 'empty' || c.type === 'divider') {
     return c.lineHeight + c.topGap;
   }
-  // Max characters that fit on 1 line before wrapping in a 500pt width box:
-  // H1 (20px bold): ~45 chars; H2 (16px bold): ~58 chars; body/bullet (14px): ~75 chars
-  const maxChars = c.type === 'h1' ? 45 : c.type === 'h2' ? 58 : 75;
+  const maxChars = c.type === 'h1' ? 45 : c.type === 'h2' ? 58 : 72;
   const sublines = wrapLineWords(c.text, maxChars);
   return c.topGap + (sublines.length * c.lineHeight);
 }

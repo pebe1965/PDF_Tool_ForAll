@@ -222,10 +222,17 @@ export function formatMarkdownToCleanText(md: string): string {
     .replace(/```[a-z]*\n([\s\S]*?)```/g, '$1')
     .replace(/`([^`]+)`/g, '$1')
 
-    // 3. Remove horizontal dividers
-    .replace(/^---+$/gm, '')
+    // 3. Preserve horizontal dividers as ---
+    .replace(/^_{3,}$/gm, '---')
+    .replace(/^\*{3,}$/gm, '---')
 
-    // 4. Convert bullet lists (*, -, +) to clean bullets (•) FIRST
+    // 4. Convert Markdown checklists (- [ ] / - [x] / ☐ / ☑) to [ ] / [x] FIRST
+    .replace(/^(\s*)[*+-]?\s*\[\s*\]\s+/gm, '$1[ ] ')
+    .replace(/^(\s*)[*+-]?\s*\[[xX✓✔]\]\s+/gm, '$1[x] ')
+    .replace(/^(\s*)☐\s+/gm, '$1[ ] ')
+    .replace(/^(\s*)[☑✓✔]\s+/gm, '$1[x] ')
+
+    // 5. Convert bullet lists (*, -, +) to clean bullets (•)
     // (Crucial: must happen before single-asterisk italic stripping so bullets are preserved!)
     .replace(/^(\s*)[*+-]\s+/gm, '$1• ')
 

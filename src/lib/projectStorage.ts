@@ -108,16 +108,17 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-export function exportProjectFile(
+export async function exportProjectFile(
   pdfBytes: ArrayBuffer,
   annotations: Annotation[],
   fileName: string,
   documentTitle: string,
-  currentPage: number
-): void {
+  currentPage: number,
+  useFilePicker: boolean = false
+): Promise<boolean> {
   const payload: ProjectFilePayload = {
     format: 'PDF_TOOL_FORALL_PROJECT_V1',
-    version: '1.2.0',
+    version: '1.3.0',
     fileName,
     documentTitle,
     currentPage,
@@ -128,15 +129,40 @@ export function exportProjectFile(
 
   const jsonStr = JSON.stringify(payload);
   const blob = new Blob([jsonStr], { type: 'application/json' });
+  const cleanTitle = documentTitle.trim().replace(/\.(pdf|pdftool)$/i, '') || 'Projekt';
+  const finalName = `${cleanTitle}.pdftool`;
+
+  if (useFilePicker && typeof (window as any).showSaveFilePicker === 'function') {
+    try {
+      const handle = await (window as any).showSaveFilePicker({
+        suggestedName: finalName,
+        types: [
+          {
+            description: 'PDF Tool Projektdatei (.pdftool)',
+            accept: { 'application/json': ['.pdftool'] },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return true;
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        return false;
+      }
+    }
+  }
+
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  const cleanTitle = documentTitle.trim().replace(/\.pdf$/i, '') || 'Projekt';
   link.href = url;
-  link.download = `${cleanTitle}.pdftool`;
+  link.download = finalName;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
 }
 
 export async function importProjectFile(file: File): Promise<{

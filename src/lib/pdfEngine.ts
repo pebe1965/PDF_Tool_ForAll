@@ -375,7 +375,7 @@ export async function applyAnnotationsToPdf(
         const pdfX = ann.x * pageWidth;
         const boxWidth = ann.width ? ann.width * pageWidth : pageWidth - pdfX;
 
-        // Process lines and segment by typography (H1, H2, body)
+        // Process lines and segment by typography (H1, H2, bullet, numbered, checklist, divider, body)
         const rawLines = ann.text.split('\n');
         interface RenderSegment {
           text: string;
@@ -383,6 +383,11 @@ export async function applyAnnotationsToPdf(
           font: any;
           lineHeight: number;
           topGap: number;
+          indentX: number;
+          kind: 'h1' | 'h2' | 'bullet' | 'numbered' | 'checklist' | 'divider' | 'body' | 'empty';
+          isFirstSubline: boolean;
+          checked?: boolean;
+          marker?: string;
         }
         const segments: RenderSegment[] = [];
 
@@ -395,6 +400,23 @@ export async function applyAnnotationsToPdf(
               font: regularFont,
               lineHeight: baseSize * 0.7,
               topGap: 4,
+              indentX: 0,
+              kind: 'empty',
+              isFirstSubline: true,
+            });
+            continue;
+          }
+
+          if (classified.type === 'divider') {
+            segments.push({
+              text: '',
+              size: baseSize,
+              font: regularFont,
+              lineHeight: baseSize * 0.8,
+              topGap: 6,
+              indentX: 0,
+              kind: 'divider',
+              isFirstSubline: true,
             });
             continue;
           }
@@ -405,18 +427,29 @@ export async function applyAnnotationsToPdf(
 
           if (ann.isBold) lineFont = boldFont;
 
-          const wrappedSublines = wrapText(classified.text, boxWidth, lineFont, lineSize);
+          const indentX =
+            classified.type === 'bullet'
+              ? 14
+              : classified.type === 'checklist'
+              ? 18
+              : classified.type === 'numbered'
+              ? 20
+              : 0;
+
+          const availWidth = Math.max(40, boxWidth - indentX);
+          const wrappedSublines = wrapText(classified.text, availWidth, lineFont, lineSize);
           for (let i = 0; i < wrappedSublines.length; i++) {
-            let lineText = wrappedSublines[i];
-            if (classified.type === 'bullet') {
-              lineText = i === 0 ? `- ${lineText}` : `  ${lineText}`;
-            }
             segments.push({
-              text: lineText,
+              text: wrappedSublines[i],
               size: lineSize,
               font: lineFont,
               lineHeight: lineH,
               topGap: i === 0 ? classified.topGap : 0,
+              indentX,
+              kind: classified.type,
+              isFirstSubline: i === 0,
+              checked: classified.checked,
+              marker: classified.marker,
             });
           }
         }
@@ -443,16 +476,101 @@ export async function applyAnnotationsToPdf(
         }
 
         let currentY = pdfY;
+        const align = ann.textAlign || 'left';
+
         for (const seg of segments) {
           currentY -= seg.topGap;
-          if (seg.text && currentY > 35) {
-            page.drawText(seg.text, {
-              x: Math.max(0, pdfX),
-              y: Math.max(0, currentY),
-              size: seg.size,
-              font: seg.font,
-              color: textColor,
-            });
+          if (currentY > 30) {
+            if (seg.kind === 'divider') {
+              const lineY = currentY + seg.size * 0.3;
+              page.drawLine({
+                start: { x: Math.max(0, pdfX), y: lineY },
+                end: { x: Math.max(0, pdfX + boxWidth), y: lineY },
+                thickness: 0.9,
+                color: rgb(0.75, 0.75, 0.78),
+              });
+            } else if (seg.kind !== 'empty') {
+              // Draw list marker on the first subline
+              if (seg.isFirstSubline) {
+                if (seg.kind === 'bullet') {
+                  page.drawCircle({
+                    x: Math.max(0, pdfX + 4.5),
+                    y: currentY + seg.size * 0.3,
+                    size: Math.max(2, seg.size * 0.16),
+                    color: textColor,
+                  });
+                } else if (seg.kind === 'numbered' && seg.marker) {
+                  const safeMarker = sanitizeForPdf(seg.marker, boldFont);
+                  page.drawText(safeMarker, {
+                    x: Math.max(0, pdfX),
+                    y: Math.max(0, currentY),
+                    size: seg.size,
+                    font: boldFont,
+                    color: textColor,
+                  });
+                } else if (seg.kind === 'checklist') {
+                  const boxSize = Math.max(8, seg.size * 0.72);
+                  const boxX = Math.max(0, pdfX + 1);
+                  const boxY = currentY + seg.size * 0.06;
+                  if (seg.checked) {
+                    page.drawRectangle({
+                      x: boxX,
+                      y: boxY,
+                      width: boxSize,
+                      height: boxSize,
+                      color: rgb(0.06, 0.49, 0.25),
+                      borderColor: rgb(0.06, 0.49, 0.25),
+                      borderWidth: 1,
+                    });
+                    // Draw crisp white checkmark inside box
+                    page.drawLine({
+                      start: { x: boxX + boxSize * 0.2, y: boxY + boxSize * 0.48 },
+                      end: { x: boxX + boxSize * 0.44, y: boxY + boxSize * 0.22 },
+                      thickness: 1.5,
+                      color: rgb(1, 1, 1),
+                    });
+                    page.drawLine({
+                      start: { x: boxX + boxSize * 0.44, y: boxY + boxSize * 0.22 },
+                      end: { x: boxX + boxSize * 0.82, y: boxY + boxSize * 0.76 },
+                      thickness: 1.5,
+                      color: rgb(1, 1, 1),
+                    });
+                  } else {
+                    page.drawRectangle({
+                      x: boxX,
+                      y: boxY,
+                      width: boxSize,
+                      height: boxSize,
+                      borderColor: textColor,
+                      borderWidth: 1.1,
+                    });
+                  }
+                }
+              }
+
+              // Draw the text itself with alignment and hanging indent
+              if (seg.text) {
+                let drawX = pdfX + seg.indentX;
+                if (seg.indentX === 0 && (align === 'center' || align === 'right')) {
+                  try {
+                    const tw = seg.font.widthOfTextAtSize(seg.text, seg.size);
+                    if (align === 'center') {
+                      drawX = pdfX + Math.max(0, (boxWidth - tw) / 2);
+                    } else if (align === 'right') {
+                      drawX = pdfX + Math.max(0, boxWidth - tw);
+                    }
+                  } catch (_) {}
+                }
+
+                page.drawText(seg.text, {
+                  x: Math.max(0, drawX),
+                  y: Math.max(0, currentY),
+                  size: seg.size,
+                  font: seg.font,
+                  color: textColor,
+                });
+              }
+            }
           }
           currentY -= seg.lineHeight;
         }
@@ -596,18 +714,48 @@ export async function mergeAndExportPages(pagesToMerge: MergePageItem[]): Promis
 }
 
 /**
- * Triggers a browser download of a PDF binary
+ * Triggers a browser download of a PDF binary (or native OS "Save As" dialog if useFilePicker is true and supported)
  */
-export function downloadPdf(bytes: Uint8Array, filename: string) {
+export async function downloadPdf(
+  bytes: Uint8Array,
+  filename: string,
+  useFilePicker: boolean = false
+): Promise<boolean> {
+  const finalName = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
   const blob = new Blob([bytes as any], { type: 'application/pdf' });
+
+  if (useFilePicker && typeof (window as any).showSaveFilePicker === 'function') {
+    try {
+      const handle = await (window as any).showSaveFilePicker({
+        suggestedName: finalName,
+        types: [
+          {
+            description: 'PDF-Dokument',
+            accept: { 'application/pdf': ['.pdf'] },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return true;
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        return false; // User cancelled the OS file picker
+      }
+      // Fall through to standard download if showSaveFilePicker failed for other reasons
+    }
+  }
+
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
+  link.download = finalName;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
 }
 
 /**

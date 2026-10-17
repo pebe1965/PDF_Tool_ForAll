@@ -11,6 +11,7 @@ export interface TextAnnotation {
   fontFamily?: 'Helvetica' | 'Times' | 'Courier';
   isBold?: boolean;
   isItalic?: boolean;
+  textAlign?: 'left' | 'center' | 'right';
   backgroundColor?: string; // 'transparent', '#FFFFFF', '#FEF08A'
 }
 

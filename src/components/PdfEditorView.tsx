@@ -34,7 +34,14 @@ import {
   ArrowRight,
   Pencil,
   ClipboardList,
+  ClipboardPaste,
   History,
+  List,
+  ListOrdered,
+  ListChecks,
+  Heading1,
+  Calendar,
+  CheckCircle2,
 } from 'lucide-react';
 import { pdfjsLib } from '../lib/pdfWorker';
 import { AnnotationLayer } from './AnnotationLayer';
@@ -42,6 +49,7 @@ import { SignatureModal } from './SignatureModal';
 import { StampModal } from './StampModal';
 import { FormFillerModal } from './FormFillerModal';
 import { PageDecorationsModal } from './PageDecorationsModal';
+import { SaveDocumentModal } from './SaveDocumentModal';
 import { GeminiAiModal } from './GeminiAiModal';
 import { formatMarkdownToCleanText, extractTextFromPdf } from '../lib/geminiService';
 import { paginateDocumentForA4 } from '../lib/a4Pagination';
@@ -121,7 +129,10 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   const [isStampModalOpen, setIsStampModalOpen] = useState(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isDecorationsModalOpen, setIsDecorationsModalOpen] = useState(false);
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<Date | null>(null);
   const [showShapesMenu, setShowShapesMenu] = useState(false);
+  const [showListMenu, setShowListMenu] = useState(false);
   const [internalIsAiModalOpen, setInternalIsAiModalOpen] = useState(false);
 
   // Detected interactive AcroForm fields
@@ -214,16 +225,24 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         annotations,
         currentPage,
         updatedAt: Date.now(),
+      }).then(() => {
+        setLastAutoSavedAt(new Date());
       });
-    }, 800);
+    }, 600);
     return () => clearTimeout(timer);
   }, [pdfBytes, annotations, documentTitle, currentPage, file]);
 
-  // Keyboard shortcuts: Cmd+Z (Undo), Cmd+Shift+Z / Cmd+Y (Redo), Cmd+F (Search), Delete/Backspace
+  // Keyboard shortcuts: Cmd+S (Save dialog), Cmd+Z (Undo), Cmd+Shift+Z / Cmd+Y (Redo), Cmd+F (Search), Delete/Backspace
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && pdfBytes) {
+        e.preventDefault();
+        setIsSaveModalOpen(true);
+        return;
+      }
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f' && pdfBytes) {
         e.preventDefault();
@@ -563,8 +582,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         pageNumber: currentPage,
         x: normX,
         y: normY,
-        width: 0.32,
-        text: 'Hier tippen...',
+        width: 0.36,
+        text: '',
         fontSize: 14,
         color: '#000000',
         backgroundColor: 'transparent',
@@ -670,6 +689,42 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     setShowShapesMenu(false);
   };
 
+  // Insert pre-formatted text block (Checklist, Bullet list, Numbered list, Heading, Date)
+  const handleInsertListTemplate = (
+    templateType: 'checklist' | 'bullet' | 'numbered' | 'heading' | 'date'
+  ) => {
+    const today = new Date().toLocaleDateString('de-DE');
+    let initialText = '';
+    if (templateType === 'checklist') {
+      initialText = '[ ] Punkt 1\n[ ] Punkt 2\n[ ] Punkt 3';
+    } else if (templateType === 'bullet') {
+      initialText = '• Erster Punkt\n• Zweiter Punkt\n• Dritter Punkt';
+    } else if (templateType === 'numbered') {
+      initialText = '1. Erster Schritt\n2. Zweiter Schritt\n3. Dritter Schritt';
+    } else if (templateType === 'heading') {
+      initialText = '# Überschrift\nHier Text eingeben...';
+    } else if (templateType === 'date') {
+      initialText = `Datum: ${today}`;
+    }
+
+    const newTextAnn: TextAnnotation = {
+      id: `text_${Date.now()}`,
+      type: 'text',
+      pageNumber: currentPage,
+      x: 0.12,
+      y: 0.2,
+      width: 0.45,
+      text: initialText,
+      fontSize: 14,
+      color: '#000000',
+      backgroundColor: 'transparent',
+    };
+    pushAnnotationsChange((prev) => [...prev, newTextAnn]);
+    setSelectedAnnId(newTextAnn.id);
+    setActiveTool('select');
+    setShowListMenu(false);
+  };
+
   // Duplicate an existing annotation
   const handleDuplicateAnnotation = (ann: Annotation) => {
     if (ann.type === 'drawing') return;
@@ -765,7 +820,70 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     setSelectedAnnId(stampAnn.id);
   };
 
-  // Clipboard paste listener (Cmd+V / Ctrl+V for screenshots)
+  // Insert pasted text (e.g. from external AI research) onto current page or selected text box
+  const insertPastedTextContent = useCallback(
+    (rawText: string) => {
+      const trimmed = rawText.trim();
+      if (!trimmed) return;
+      const cleanText = formatMarkdownToCleanText(trimmed);
+
+      // If a text annotation on the current page is currently selected, append/insert into it
+      if (selectedAnnId) {
+        const selectedAnn = annotations.find((a) => a.id === selectedAnnId);
+        if (selectedAnn && selectedAnn.type === 'text' && selectedAnn.pageNumber === currentPage) {
+          const textAnn = selectedAnn as TextAnnotation;
+          const updatedText = textAnn.text ? `${textAnn.text}\n${cleanText}` : cleanText;
+          pushAnnotationsChange((prev) =>
+            prev.map((a) => (a.id === textAnn.id ? { ...textAnn, text: updatedText } : a))
+          );
+          return;
+        }
+      }
+
+      // Check if it's a long multi-page AI research text
+      const pages = paginateDocumentForA4(cleanText, 14);
+      if (pages.length > 1) {
+        handleInsertTextFromAi(cleanText);
+        return;
+      }
+
+      // Otherwise create a new text box right on the current page
+      const isLongBlock = cleanText.length > 160 || cleanText.includes('\n');
+      const newTextAnn: TextAnnotation = {
+        id: `text_${Date.now()}`,
+        type: 'text',
+        pageNumber: currentPage,
+        x: isLongBlock ? 0.08 : 0.15,
+        y: isLongBlock ? 0.12 : 0.2,
+        width: isLongBlock ? 0.84 : 0.45,
+        text: cleanText,
+        fontSize: 14,
+        color: '#000000',
+        backgroundColor: 'transparent',
+      };
+      pushAnnotationsChange((prev) => [...prev, newTextAnn]);
+      setSelectedAnnId(newTextAnn.id);
+      setActiveTool('select');
+    },
+    [selectedAnnId, annotations, currentPage, pdfBytes]
+  );
+
+  const handlePasteFromToolbar = async () => {
+    try {
+      const clipText = await navigator.clipboard.readText();
+      if (clipText && clipText.trim()) {
+        insertPastedTextContent(clipText);
+      } else {
+        alert('Die Zwischenablage enthält aktuell keinen Text.');
+      }
+    } catch {
+      alert(
+        'Tipp: Drücke einfach direkt Cmd+V (Mac) bzw. Strg+V (Windows) auf der PDF-Seite, um Text oder Screenshots aus der Zwischenablage einzufügen.'
+      );
+    }
+  };
+
+  // Clipboard paste listener (Cmd+V / Ctrl+V for screenshots AND text / AI research)
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement;
@@ -782,15 +900,21 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
           if (blob) {
             e.preventDefault();
             handleInsertImageFile(blob, 'Screenshot');
-            break;
+            return;
           }
         }
+      }
+
+      const pastedText = e.clipboardData.getData('text/plain');
+      if (pastedText && pastedText.trim()) {
+        e.preventDefault();
+        insertPastedTextContent(pastedText);
       }
     };
 
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [pdfBytes, currentPage, canvasDimensions]);
+  }, [pdfBytes, currentPage, canvasDimensions, insertPastedTextContent]);
 
   // Add signature
   const handleAddSignature = (dataUrl: string) => {
@@ -1000,15 +1124,19 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     if (selectedAnnId === id) setSelectedAnnId(null);
   };
 
-  // Export & Download final PDF
-  const handleExport = async () => {
+  // Export & Save final PDF (with custom name & optional native Save-As file picker)
+  const handleExport = async (customTitle?: string, useFilePicker: boolean = false) => {
     if (!pdfBytes) return;
+    const effectiveTitle = (customTitle ?? documentTitle).trim().replace(/\.pdf$/i, '') || 'Dokument_bearbeitet';
+    setDocumentTitle(effectiveTitle);
     setExporting(true);
 
     try {
       const modifiedBytes = await applyAnnotationsToPdf(pdfBytes, annotations);
-      const cleanName = documentTitle.trim().replace(/\.pdf$/i, '') || 'Dokument_bearbeitet';
-      downloadPdf(modifiedBytes, `${cleanName}.pdf`);
+      const saved = await downloadPdf(modifiedBytes, `${effectiveTitle}.pdf`, useFilePicker);
+      if (saved) {
+        setIsSaveModalOpen(false);
+      }
     } catch (err: any) {
       console.error('Export error:', err);
       alert(`Fehler beim Exportieren der PDF: ${err?.message || err}`);
@@ -1018,15 +1146,37 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   };
 
   // Save editable .pdftool project file
-  const handleExportProject = () => {
+  const handleExportProject = async (customTitle?: string, useFilePicker: boolean = false) => {
     if (!pdfBytes) return;
-    exportProjectFile(
+    const effectiveTitle = (customTitle ?? documentTitle).trim().replace(/\.(pdf|pdftool)$/i, '') || 'Projekt';
+    setDocumentTitle(effectiveTitle);
+    const saved = await exportProjectFile(
       pdfBytes,
       annotations,
       file?.name || 'Dokument.pdf',
-      documentTitle,
-      currentPage
+      effectiveTitle,
+      currentPage,
+      useFilePicker
     );
+    if (saved) {
+      setIsSaveModalOpen(false);
+    }
+  };
+
+  // Save to internal IndexedDB draft workspace only
+  const handleSaveDraftOnly = async (customTitle: string) => {
+    if (!pdfBytes || !file) return;
+    const effectiveTitle = customTitle.trim().replace(/\.pdf$/i, '') || 'Dokument_bearbeitet';
+    setDocumentTitle(effectiveTitle);
+    await saveWorkspaceDraft({
+      fileName: file.name,
+      documentTitle: effectiveTitle,
+      pdfBytes,
+      annotations,
+      currentPage,
+      updatedAt: Date.now(),
+    });
+    setLastAutoSavedAt(new Date());
   };
 
   // Dropzone drag events
@@ -1199,11 +1349,103 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                     ? 'bg-[#0071E3] text-white shadow-sm'
                     : 'bg-[#F5F5F7] text-[#1D1D1F] hover:bg-gray-200'
                 }`}
-                title="Klicke auf die PDF-Seite, um ein Textfeld zu platzieren"
+                title="Klicke auf die PDF-Seite, um ein Textfeld zu platzieren und sofort loszuschreiben"
               >
                 <Type size={14} />
                 <span>Text</span>
               </button>
+
+              {/* Quick Lists & Checklists Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowListMenu((s) => !s)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition ${
+                    showListMenu
+                      ? 'bg-[#0071E3] text-white shadow-sm'
+                      : 'bg-[#F5F5F7] text-[#1D1D1F] hover:bg-gray-200'
+                  }`}
+                  title="Checkliste, Aufzählung (•) oder nummerierte Liste (1. 2. 3.) direkt einfügen"
+                >
+                  <ListChecks size={14} />
+                  <span>Listen & Checkliste</span>
+                </button>
+
+                {showListMenu && (
+                  <div
+                    className="absolute left-0 top-10 w-60 bg-white rounded-2xl shadow-2xl border border-gray-200 p-2 z-40 space-y-1 text-xs"
+                    onMouseLeave={() => setShowListMenu(false)}
+                  >
+                    <button
+                      onClick={() => handleInsertListTemplate('checklist')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-emerald-50 text-gray-800 font-semibold transition"
+                    >
+                      <ListChecks size={15} className="text-emerald-600" />
+                      <span>Checkliste (☐ zum Abhaken)</span>
+                    </button>
+                    <button
+                      onClick={() => handleInsertListTemplate('bullet')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-blue-50 text-gray-800 font-semibold transition"
+                    >
+                      <List size={15} className="text-[#0071E3]" />
+                      <span>Aufzählung (• Punkte)</span>
+                    </button>
+                    <button
+                      onClick={() => handleInsertListTemplate('numbered')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-blue-50 text-gray-800 font-semibold transition"
+                    >
+                      <ListOrdered size={15} className="text-[#0071E3]" />
+                      <span>Nummerierte Liste (1. 2. 3.)</span>
+                    </button>
+                    <div className="border-t border-gray-100 my-1" />
+                    <button
+                      onClick={() => handleInsertListTemplate('heading')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-gray-100 text-gray-800 font-medium transition"
+                    >
+                      <Heading1 size={14} className="text-gray-700" />
+                      <span>Überschrift + Textblock</span>
+                    </button>
+                    <button
+                      onClick={() => handleInsertListTemplate('date')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-gray-100 text-gray-800 font-medium transition"
+                    >
+                      <Calendar size={14} className="text-gray-700" />
+                      <span>Tagesdatum einfügen</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Paste Text from Clipboard (e.g. from AI research) */}
+              <button
+                onClick={handlePasteFromToolbar}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#F5F5F7] hover:bg-blue-50 hover:text-[#0071E3] text-[#1D1D1F] rounded-xl text-xs font-semibold transition"
+                title="Kopierten Text aus der Zwischenablage (z. B. aus einer KI-Recherche) direkt auf die Seite einfügen (oder Cmd+V / Strg+V drücken)"
+              >
+                <ClipboardPaste size={14} />
+                <span>Einfügen</span>
+              </button>
+
+              {/* Image / Photo / Logo (always visible label, freely movable & resizable) */}
+              <button
+                onClick={() => document.getElementById('image-upload-editor')?.click()}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#F5F5F7] hover:bg-blue-50 hover:text-[#0071E3] text-[#1D1D1F] rounded-xl text-xs font-semibold transition"
+                title="Bild, Foto, Logo oder Screenshot einfügen (frei platzierbar & stufenlos skalierbar – oder per Drag & Drop / Cmd+V)"
+              >
+                <ImageIcon size={14} />
+                <span>Bild / Foto</span>
+              </button>
+              <input
+                id="image-upload-editor"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) {
+                    handleInsertImageFile(e.target.files[0], e.target.files[0].name);
+                    e.target.value = '';
+                  }
+                }}
+              />
 
               {/* Highlighter */}
               <button
@@ -1328,28 +1570,6 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                 <span>Signatur</span>
               </button>
 
-              {/* Image / Screenshot */}
-              <button
-                onClick={() => document.getElementById('image-upload-editor')?.click()}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#F5F5F7] hover:bg-gray-200 text-[#1D1D1F] rounded-xl text-xs font-semibold transition"
-                title="Bild oder Screenshot einfügen (oder direkt Cmd+V / Strg+V drücken)"
-              >
-                <ImageIcon size={14} />
-                <span className="hidden xl:inline">Bild</span>
-              </button>
-              <input
-                id="image-upload-editor"
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files?.[0]) {
-                    handleInsertImageFile(e.target.files[0], e.target.files[0].name);
-                    e.target.value = '';
-                  }
-                }}
-              />
-
               {/* Page Numbers & Watermark */}
               <button
                 onClick={() => setIsDecorationsModalOpen(true)}
@@ -1445,31 +1665,37 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
               </div>
             </div>
 
-            {/* Right: Export, Project Save & File Info */}
+            {/* Right: Auto-Save Indicator, File Name & Save Dialog Button */}
             <div className="flex items-center gap-1.5">
+              {/* Live Auto-Save Status Badge */}
+              <button
+                onClick={() => setIsSaveModalOpen(true)}
+                className="hidden lg:flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-medium transition border border-emerald-200/70"
+                title={
+                  lastAutoSavedAt
+                    ? `Automatisch im Programm zwischengespeichert um ${lastAutoSavedAt.toLocaleTimeString('de-DE')}. Klicken für Speicher-Optionen.`
+                    : 'Automatische Zwischenspeicherung aktiv'
+                }
+              >
+                <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+                <span>Zwischengespeichert</span>
+              </button>
+
               <div className="flex items-center bg-[#F5F5F7] border border-gray-200/80 rounded-xl px-2 py-1 focus-within:border-[#0071E3] focus-within:bg-white transition">
                 <input
                   type="text"
                   value={documentTitle}
                   onChange={(e) => setDocumentTitle(e.target.value)}
                   placeholder="Dateiname..."
-                  className="bg-transparent text-xs font-semibold text-gray-800 focus:outline-none w-24 sm:w-36"
+                  title="Dateiname hier direkt ändern oder im Speichern-Dialog festlegen"
+                  className="bg-transparent text-xs font-semibold text-gray-800 focus:outline-none w-24 sm:w-32"
                 />
                 <span className="text-[11px] font-mono text-gray-400 select-none">.pdf</span>
               </div>
 
               <button
-                onClick={handleExportProject}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold transition"
-                title="Als bearbeitbare .pdftool Projektdatei speichern (alle Textboxen & Stempel bleiben später verschiebbar)"
-              >
-                <Save size={14} />
-                <span className="hidden xl:inline">Projekt</span>
-              </button>
-
-              <button
                 onClick={() => {
-                  if (confirm('Anderes Dokument öffnen?')) {
+                  if (confirm('Anderes Dokument öffnen? (Dein aktueller Stand bleibt im Zwischenspeicher erhalten)')) {
                     setFile(null);
                     setPdfBytes(null);
                     setPdfDoc(null);
@@ -1482,12 +1708,13 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
               </button>
 
               <button
-                onClick={handleExport}
+                onClick={() => setIsSaveModalOpen(true)}
                 disabled={exporting}
                 className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#0071E3] hover:bg-[#0077ED] text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-60"
+                title="Dokument benennen, Speicherort wählen oder als Projekt speichern (Cmd+S / Strg+S)"
               >
-                {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-                <span>PDF speichern</span>
+                {exporting ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                <span>Speichern…</span>
               </button>
             </div>
           </div>
@@ -1786,6 +2013,20 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         pdfBytes={pdfBytes}
         numPages={numPages}
         onApplyDecorations={(updatedBytes) => reloadPdfFromBuffer(updatedBytes, currentPage)}
+      />
+
+      {/* Save & Rename Document Modal (PDF Export, Editable .pdftool Project, or Internal Draft) */}
+      <SaveDocumentModal
+        isOpen={isSaveModalOpen}
+        onClose={() => setIsSaveModalOpen(false)}
+        documentTitle={documentTitle}
+        originalFileName={file?.name || 'Dokument.pdf'}
+        annotationsCount={annotations.length}
+        lastAutoSavedAt={lastAutoSavedAt}
+        exporting={exporting}
+        onSaveFinalPdf={handleExport}
+        onSaveEditableProject={handleExportProject}
+        onSaveDraftOnly={handleSaveDraftOnly}
       />
 
       {/* Gemini AI Assistant Modal / Slide-Over */}

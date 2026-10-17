@@ -45,6 +45,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Update check states
   const [checking, setChecking] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [selfUpdating, setSelfUpdating] = useState(false);
+  const [selfUpdateMsg, setSelfUpdateMsg] = useState<string | null>(null);
   const [autoCheck, setAutoCheck] = useState<boolean>(() => {
     return localStorage.getItem('auto_check_updates') !== 'false';
   });
@@ -73,6 +75,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setApiKeySaved(false);
       setCodeInput(getZugangscode());
       setCodeStatus(null);
+      setSelfUpdateMsg(null);
 
       // Perform update check if none exists yet
       if (!updateInfo) {
@@ -83,6 +86,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleCheckUpdates = async () => {
     setChecking(true);
+    setSelfUpdateMsg(null);
     try {
       const info = await checkForGitHubUpdate();
       setUpdateInfo(info);
@@ -90,6 +94,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       // Ignored
     } finally {
       setChecking(false);
+    }
+  };
+
+  const handleSelfUpdate = async () => {
+    setSelfUpdating(true);
+    setSelfUpdateMsg(null);
+    try {
+      const res = await fetch('/api/self-update', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        setSelfUpdateMsg(`✅ Update auf v${data.version} installiert! App wird neu geladen...`);
+        setTimeout(() => {
+          window.location.reload();
+        }, 1200);
+      } else {
+        setSelfUpdateMsg(
+          data?.error ||
+            'Direkt-Update über den lokalen Server nicht verfügbar. Bitte lade unten das .dmg oder .zip Paket herunter.'
+        );
+      }
+    } catch (_) {
+      setSelfUpdateMsg(
+        'Direkt-Update über den lokalen Server nicht verfügbar. Bitte lade unten das .dmg oder .zip Paket herunter.'
+      );
+    } finally {
+      setSelfUpdating(false);
     }
   };
 
@@ -267,8 +297,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </div>
                     )}
 
+                    {/* 1-Click Direct In-App Update */}
+                    <div className="pt-1 space-y-2">
+                      <button
+                        onClick={handleSelfUpdate}
+                        disabled={selfUpdating}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0071E3] hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-bold rounded-xl transition shadow-md"
+                      >
+                        <RefreshCw size={14} className={selfUpdating ? 'animate-spin' : ''} />
+                        <span>
+                          {selfUpdating
+                            ? 'Lade Update von GitHub und installiere...'
+                            : `⚡ Jetzt direkt im Tool auf v${updateInfo.latestVersion} updaten`}
+                        </span>
+                      </button>
+
+                      {selfUpdateMsg && (
+                        <div className="p-2.5 rounded-xl bg-white/90 border border-emerald-200 text-xs text-gray-800 text-center font-medium">
+                          {selfUpdateMsg}
+                        </div>
+                      )}
+                    </div>
+
                     {/* Action Download Buttons */}
-                    <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                    <div className="flex flex-col sm:flex-row gap-2 pt-0.5">
                       {updateInfo.dmgUrl && (
                         <a
                           href={updateInfo.dmgUrl}
