@@ -178,7 +178,7 @@ static NSString *findPythonExecutable(NSString *appDir) {
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
     self.window.title = @"PDF Tool ForAll";
-    self.window.minSize = NSMakeSize(940, 600);
+    self.window.minSize = NSMakeSize(780, 560);
     [self.window center];
     [self.window setFrameAutosaveName:@"PDFToolForAllMainWindow"];
     self.window.delegate = self;
