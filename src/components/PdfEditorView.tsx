@@ -42,6 +42,8 @@ import {
   Heading1,
   Calendar,
   CheckCircle2,
+  Home,
+  ArrowLeft,
 } from 'lucide-react';
 import { pdfjsLib } from '../lib/pdfWorker';
 import { AnnotationLayer } from './AnnotationLayer';
@@ -92,6 +94,9 @@ interface PdfEditorViewProps {
   onPdfUpdate: (bytes: ArrayBuffer, fileName: string) => void;
   onOpenMergeTab?: () => void;
   onOpenToolsTab?: () => void;
+  onGoHome?: () => void;
+  isHomeView?: boolean;
+  onGoToEditor?: () => void;
   isAiModalOpen?: boolean;
   onToggleAiModal?: (open: boolean) => void;
 }
@@ -109,6 +114,9 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   onPdfUpdate,
   onOpenMergeTab,
   onOpenToolsTab,
+  onGoHome,
+  isHomeView = false,
+  onGoToEditor,
   isAiModalOpen: externalIsAiModalOpen,
   onToggleAiModal,
 }) => {
@@ -130,6 +138,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isDecorationsModalOpen, setIsDecorationsModalOpen] = useState(false);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [isDocSwitcherOpen, setIsDocSwitcherOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [lastAutoSavedAt, setLastAutoSavedAt] = useState<Date | null>(null);
   const [showShapesMenu, setShowShapesMenu] = useState(false);
   const [showListMenu, setShowListMenu] = useState(false);
@@ -406,6 +416,16 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  // Close active document safely (state remains saved in workspace draft)
+  const handleCloseDocument = () => {
+    setFile(null);
+    setPdfBytes(null);
+    setPdfDoc(null);
+    setAnnotations([]);
+    setUndoStack([]);
+    setRedoStack([]);
   };
 
   // Add a blank page to the current PDF
@@ -1213,11 +1233,45 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
   return (
     <div className="flex flex-col h-[calc(100vh-68px)] overflow-hidden bg-[#F5F5F7]">
-      {!file ? (
+      {isHomeView || !file ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
+          {/* Active Workspace Document Banner */}
+          {file && (
+            <div className="w-full max-w-5xl mb-6 p-4 bg-white border border-[#0071E3]/40 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0071E3] flex items-center justify-center shrink-0">
+                  <FileText size={20} />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-gray-900">
+                    Aktives Arbeitsdokument im Editor: „{documentTitle}.pdf“
+                  </div>
+                  <div className="text-[11px] text-gray-500">
+                    {numPages} {numPages === 1 ? 'Seite' : 'Seiten'} • {annotations.length} bearbeitbare Elemente
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCloseDocument}
+                  className="px-3 py-1.5 rounded-xl text-xs text-gray-600 hover:text-red-600 hover:bg-gray-100 transition cursor-pointer"
+                  title="Dokument schließen (Stand bleibt im Verlauf gesichert)"
+                >
+                  Dokument schließen
+                </button>
+                <button
+                  onClick={onGoToEditor}
+                  className="px-4 py-1.5 rounded-xl bg-[#0071E3] hover:bg-[#0077ED] text-white text-xs font-semibold shadow-sm transition cursor-pointer"
+                >
+                  Jetzt weiterbearbeiten
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Resume Saved Draft Banner */}
-          {savedDraft && (
-            <div className="w-full max-w-4xl mb-6 p-4 bg-white border border-blue-200 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {!file && savedDraft && (
+            <div className="w-full max-w-5xl mb-6 p-4 bg-white border border-blue-200 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0071E3] flex items-center justify-center shrink-0">
                   <History size={20} />
@@ -1237,13 +1291,16 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                     clearWorkspaceDraft();
                     setSavedDraft(null);
                   }}
-                  className="px-3 py-1.5 rounded-xl text-xs text-gray-500 hover:bg-gray-100 transition"
+                  className="px-3 py-1.5 rounded-xl text-xs text-gray-500 hover:bg-gray-100 transition cursor-pointer"
                 >
                   Verwerfen
                 </button>
                 <button
-                  onClick={handleRestoreDraft}
-                  className="px-4 py-1.5 rounded-xl bg-[#0071E3] hover:bg-[#0077ED] text-white text-xs font-semibold shadow-sm transition"
+                  onClick={async () => {
+                    await handleRestoreDraft();
+                    onGoToEditor?.();
+                  }}
+                  className="px-4 py-1.5 rounded-xl bg-[#0071E3] hover:bg-[#0077ED] text-white text-xs font-semibold shadow-sm transition cursor-pointer"
                 >
                   Jetzt weiterbearbeiten
                 </button>
@@ -1251,69 +1308,111 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
             </div>
           )}
 
-          <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {/* Card 1: Open existing PDF or .pdftool Project */}
             <div
               onDragOver={handleDragOver}
               onDrop={handleDrop}
-              onClick={() => document.getElementById('file-upload-editor')?.click()}
-              className="p-7 bg-white rounded-3xl border-2 border-dashed border-[#D2D2D7] hover:border-[#0071E3] transition-all flex flex-col items-center text-center shadow-lg group cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+              className="p-6 bg-white rounded-3xl border-2 border-dashed border-[#D2D2D7] hover:border-[#0071E3] transition-all flex flex-col items-center text-center shadow-lg group cursor-pointer"
             >
               <div className="w-14 h-14 rounded-2xl bg-[#0071E3]/10 text-[#0071E3] flex items-center justify-center mb-4 group-hover:scale-105 transition">
                 <Upload size={28} />
               </div>
-              <h2 className="text-lg font-bold text-[#1D1D1F] mb-2">PDF oder Projekt öffnen</h2>
+              <h2 className="text-base font-bold text-[#1D1D1F] mb-2">PDF oder Projekt öffnen</h2>
               <p className="text-xs text-[#86868B] mb-5 flex-1">
                 PDF-Datei oder gespeicherte <code className="font-mono">.pdftool</code>-Projektdatei reinziehen, um zu bearbeiten, zu stempeln, zu schwärzen oder zu signieren.
               </p>
-              <span className="w-full py-2.5 bg-[#0071E3] hover:bg-[#0077ED] text-white text-xs font-semibold rounded-xl shadow-md transition text-center">
-                PDF / Projekt auswählen
-              </span>
-              <input
-                id="file-upload-editor"
-                type="file"
-                accept="application/pdf,.pdf,.pdftool"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files?.[0]) handleFileChange(e.target.files[0]);
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
                 }}
-              />
+                className="w-full py-2.5 bg-[#0071E3] hover:bg-[#0077ED] text-white text-xs font-semibold rounded-xl shadow-md transition text-center cursor-pointer"
+              >
+                PDF / Projekt auswählen
+              </button>
             </div>
 
             {/* Card 2: Create new blank PDF */}
             <div
-              onClick={handleCreateNewBlankPdf}
-              className="p-7 bg-white rounded-3xl border-2 border-dashed border-[#D2D2D7] hover:border-emerald-500 transition-all flex flex-col items-center text-center shadow-lg group cursor-pointer"
+              onClick={async () => {
+                await handleCreateNewBlankPdf();
+                onGoToEditor?.();
+              }}
+              className="p-6 bg-white rounded-3xl border-2 border-dashed border-[#D2D2D7] hover:border-emerald-500 transition-all flex flex-col items-center text-center shadow-lg group cursor-pointer"
             >
               <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-4 group-hover:scale-105 transition">
                 <FilePlus size={28} />
               </div>
-              <h2 className="text-lg font-bold text-[#1D1D1F] mb-2">Leeres A4-Dokument</h2>
+              <h2 className="text-base font-bold text-[#1D1D1F] mb-2">Leeres A4-Dokument</h2>
               <p className="text-xs text-[#86868B] mb-5 flex-1">
-                Erstelle ein leeres DIN-A4-PDF von Grund auf – ideal für Briefe, Angebote, Protokolle oder KI-generierte Vertragsvorlagen.
+                Erstelle ein leeres DIN-A4-PDF von Grund auf – ideal für Briefe, Angebote, Protokolle oder Vorlagen.
               </p>
-              <span className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-md transition text-center">
+              <button
+                type="button"
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-md transition text-center cursor-pointer"
+              >
                 Leeres PDF anlegen
-              </span>
+              </button>
             </div>
 
-            {/* Card 3: Business Tools Shortcut */}
+            {/* Card 3: Merge & Organize */}
+            <div
+              onClick={onOpenMergeTab}
+              className="p-6 bg-white rounded-3xl border-2 border-dashed border-[#D2D2D7] hover:border-indigo-500 transition-all flex flex-col items-center text-center shadow-lg group cursor-pointer"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center mb-4 group-hover:scale-105 transition">
+                <FileStack size={28} />
+              </div>
+              <h2 className="text-base font-bold text-[#1D1D1F] mb-2">Zusammenführen & Sortieren</h2>
+              <p className="text-xs text-[#86868B] mb-5 flex-1">
+                Mehrere PDFs und Bilder kombinieren, Seiten per Drag-and-Drop neu anordnen, drehen oder löschen.
+              </p>
+              <button
+                type="button"
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-md transition text-center cursor-pointer"
+              >
+                Zu den Seiten-Tools
+              </button>
+            </div>
+
+            {/* Card 4: Business Tools Shortcut */}
             <div
               onClick={onOpenToolsTab}
-              className="p-7 bg-white rounded-3xl border-2 border-dashed border-[#D2D2D7] hover:border-purple-500 transition-all flex flex-col items-center text-center shadow-lg group cursor-pointer"
+              className="p-6 bg-white rounded-3xl border-2 border-dashed border-[#D2D2D7] hover:border-purple-500 transition-all flex flex-col items-center text-center shadow-lg group cursor-pointer"
             >
               <div className="w-14 h-14 rounded-2xl bg-purple-500/10 text-purple-600 flex items-center justify-center mb-4 group-hover:scale-105 transition">
                 <Sparkles size={28} />
               </div>
-              <h2 className="text-lg font-bold text-[#1D1D1F] mb-2">Firmen-Werkzeuge</h2>
+              <h2 className="text-base font-bold text-[#1D1D1F] mb-2">Firmen-Werkzeuge</h2>
               <p className="text-xs text-[#86868B] mb-5 flex-1">
                 PDFs teilen, Dateigröße komprimieren, ZUGFeRD/XRechnung prüfen, Verträge vergleichen (Diff) oder Bilder konvertieren.
               </p>
-              <span className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-xl shadow-md transition text-center">
+              <button
+                type="button"
+                className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-xl shadow-md transition text-center cursor-pointer"
+              >
                 Zu den Werkzeugen
-              </span>
+              </button>
             </div>
           </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/pdf,.pdf,.pdftool"
+            className="hidden"
+            onClick={(e) => e.stopPropagation()}
+            onChange={async (e) => {
+              if (e.target.files?.[0]) {
+                await handleFileChange(e.target.files[0]);
+                onGoToEditor?.();
+              }
+              e.target.value = '';
+            }}
+          />
         </div>
       ) : (
         <>
@@ -1321,6 +1420,17 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
           <div className="min-h-[56px] bg-white border-b border-[#E8E8ED] px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 shadow-sm z-20">
             {/* Left: Annotation & Office Tools */}
             <div className="flex flex-wrap items-center gap-1.5">
+              {onGoHome && (
+                <button
+                  onClick={onGoHome}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-700 hover:text-black bg-[#F5F5F7] hover:bg-gray-200 border border-gray-200 transition cursor-pointer mr-1 shadow-xs"
+                  title="Zur Startseite / Hauptmenü (Aktuelles Dokument bleibt erhalten)"
+                >
+                  <ArrowLeft size={14} />
+                  <span>Startseite</span>
+                </button>
+              )}
+
               {/* Undo / Redo */}
               <div className="flex items-center bg-[#F5F5F7] rounded-xl p-0.5 mr-0.5">
                 <button
@@ -1694,17 +1804,11 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
               </div>
 
               <button
-                onClick={() => {
-                  if (confirm('Anderes Dokument öffnen? (Dein aktueller Stand bleibt im Zwischenspeicher erhalten)')) {
-                    setFile(null);
-                    setPdfBytes(null);
-                    setPdfDoc(null);
-                  }
-                }}
-                className="p-1.5 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition"
-                title="Anderes PDF laden oder Startbildschirm öffnen"
+                onClick={() => setIsDocSwitcherOpen(true)}
+                className="p-1.5 rounded-xl text-gray-600 hover:text-black hover:bg-gray-100 transition cursor-pointer"
+                title="Anderes PDF laden, leeres Dokument anlegen oder zur Startseite"
               >
-                <FolderOpen size={15} />
+                <FolderOpen size={16} />
               </button>
 
               <button
@@ -2042,6 +2146,78 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         onInsertAsNewPage={handleInsertAsNewPageFromAi}
         onReplaceCurrentPage={handleReplaceCurrentPageWithAiText}
       />
+
+      {/* Document Switcher Modal */}
+      {isDocSwitcherOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-100 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-blue-50 text-[#0071E3] flex items-center justify-center shrink-0">
+                <FolderOpen size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900">Dokument wechseln</h3>
+                <p className="text-xs text-gray-500">Dein aktueller Stand bleibt im Zwischenspeicher gesichert.</p>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <button
+                onClick={() => {
+                  setIsDocSwitcherOpen(false);
+                  fileInputRef.current?.click();
+                }}
+                className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-blue-50 hover:bg-blue-100/70 text-[#0071E3] font-semibold text-xs transition text-left cursor-pointer"
+              >
+                <Upload size={18} className="shrink-0" />
+                <div>
+                  <div className="text-xs font-bold">Anderes PDF oder Projekt öffnen…</div>
+                  <div className="text-[11px] text-blue-600/70 font-normal">Wähle eine neue Datei von deinem Computer</div>
+                </div>
+              </button>
+
+              <button
+                onClick={async () => {
+                  setIsDocSwitcherOpen(false);
+                  await handleCreateNewBlankPdf();
+                  onGoToEditor?.();
+                }}
+                className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-emerald-50 hover:bg-emerald-100/70 text-emerald-700 font-semibold text-xs transition text-left cursor-pointer"
+              >
+                <FilePlus size={18} className="shrink-0" />
+                <div>
+                  <div className="text-xs font-bold">Neues leeres A4-Dokument</div>
+                  <div className="text-[11px] text-emerald-600 font-normal">Startet ein frisches leeres Blatt</div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  setIsDocSwitcherOpen(false);
+                  handleCloseDocument();
+                  onGoHome?.();
+                }}
+                className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-gray-50 hover:bg-gray-100 text-gray-800 font-semibold text-xs transition text-left cursor-pointer"
+              >
+                <Home size={18} className="shrink-0" />
+                <div>
+                  <div className="text-xs font-bold">Zur Startseite zurückkehren</div>
+                  <div className="text-[11px] text-gray-500 font-normal">Dokument schließen und Hauptmenü anzeigen</div>
+                </div>
+              </button>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setIsDocSwitcherOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-500 hover:bg-gray-100 transition cursor-pointer"
+              >
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

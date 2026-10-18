@@ -1,11 +1,14 @@
 import React from 'react';
-import { FileEdit, FileStack, ShieldCheck, Sparkles, Settings, Wrench } from 'lucide-react';
+import { Home, FileEdit, FileStack, ShieldCheck, Sparkles, Settings, Wrench } from 'lucide-react';
 import { APP_VERSION } from '../config';
 import { UpdateNotification } from './UpdateNotification';
 
+export type AppTab = 'home' | 'editor' | 'merge' | 'tools';
+
 interface HeaderProps {
-  activeTab: 'editor' | 'merge' | 'tools';
-  onTabChange: (tab: 'editor' | 'merge' | 'tools') => void;
+  activeTab: AppTab;
+  onTabChange: (tab: AppTab) => void;
+  hasActiveDocument?: boolean;
   onOpenAiAssistant?: () => void;
   onOpenSettings?: () => void;
 }
@@ -13,19 +16,24 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   onTabChange,
+  hasActiveDocument = false,
   onOpenAiAssistant,
   onOpenSettings,
 }) => {
   return (
     <header className="h-[68px] bg-white/80 backdrop-blur-md border-b border-[#D2D2D7]/60 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 select-none gap-2">
-      {/* Brand Logo & Name */}
-      <div className="flex items-center gap-2.5 sm:gap-3 flex-shrink-0">
-        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-[#0071E3] to-[#42A5F5] text-white flex items-center justify-center shadow-md flex-shrink-0">
+      {/* Brand Logo & Name (Klickbar für Rückkehr zur Startseite) */}
+      <button
+        onClick={() => onTabChange('home')}
+        className="flex items-center gap-2.5 sm:gap-3 flex-shrink-0 group text-left cursor-pointer focus:outline-none transition hover:opacity-90"
+        title="Zur Startseite / Hauptmenü"
+      >
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-[#0071E3] to-[#42A5F5] text-white flex items-center justify-center shadow-md flex-shrink-0 group-hover:scale-105 transition">
           <FileEdit size={20} />
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <h1 className="font-bold text-base sm:text-lg text-[#1D1D1F] tracking-tight whitespace-nowrap">
+            <h1 className="font-bold text-base sm:text-lg text-[#1D1D1F] tracking-tight whitespace-nowrap group-hover:text-[#0071E3] transition">
               PDF Tool ForAll
             </h1>
             <span className="hidden xl:inline-block text-[10px] font-semibold bg-blue-100 text-[#0071E3] px-2 py-0.5 rounded-full uppercase tracking-wider whitespace-nowrap">
@@ -36,13 +44,26 @@ export const Header: React.FC<HeaderProps> = ({
             Kostenlos • Ohne Cloud • 100% Datenschutz
           </p>
         </div>
-      </div>
+      </button>
 
       {/* Main Mode Switcher Navigation */}
       <nav className="flex items-center bg-[#F5F5F7] p-1 rounded-2xl border border-[#E8E8ED] flex-shrink-0">
         <button
+          onClick={() => onTabChange('home')}
+          className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition whitespace-nowrap cursor-pointer ${
+            activeTab === 'home'
+              ? 'bg-white text-[#0071E3] shadow-sm'
+              : 'text-[#86868B] hover:text-[#1D1D1F]'
+          }`}
+          title="Startseite & Übersicht"
+        >
+          <Home size={16} className="flex-shrink-0" />
+          <span>Startseite</span>
+        </button>
+
+        <button
           onClick={() => onTabChange('editor')}
-          className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition whitespace-nowrap ${
+          className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition whitespace-nowrap cursor-pointer ${
             activeTab === 'editor'
               ? 'bg-white text-[#0071E3] shadow-sm'
               : 'text-[#86868B] hover:text-[#1D1D1F]'
@@ -50,12 +71,20 @@ export const Header: React.FC<HeaderProps> = ({
           title="Bearbeiten & Signieren"
         >
           <FileEdit size={16} className="flex-shrink-0" />
-          <span>Bearbeiten<span className="hidden lg:inline"> & Signieren</span></span>
+          <span className="flex items-center gap-1.5">
+            <span>Bearbeiten<span className="hidden lg:inline"> & Signieren</span></span>
+            {hasActiveDocument && (
+              <span
+                className="w-2 h-2 rounded-full bg-[#0071E3] inline-block animate-pulse"
+                title="Dokument aktiv geöffnet"
+              />
+            )}
+          </span>
         </button>
 
         <button
           onClick={() => onTabChange('merge')}
-          className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition whitespace-nowrap ${
+          className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition whitespace-nowrap cursor-pointer ${
             activeTab === 'merge'
               ? 'bg-white text-[#0071E3] shadow-sm'
               : 'text-[#86868B] hover:text-[#1D1D1F]'
@@ -68,7 +97,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         <button
           onClick={() => onTabChange('tools')}
-          className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition whitespace-nowrap ${
+          className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition whitespace-nowrap cursor-pointer ${
             activeTab === 'tools'
               ? 'bg-white text-[#0071E3] shadow-sm'
               : 'text-[#86868B] hover:text-[#1D1D1F]'

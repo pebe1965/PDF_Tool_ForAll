@@ -15,6 +15,7 @@ import {
   Sparkles,
   FileText,
   Trash2,
+  ArrowLeft,
 } from 'lucide-react';
 import {
   splitPdfByRanges,
@@ -40,6 +41,7 @@ interface PdfToolsViewProps {
   sharedPdfBytes: ArrayBuffer | null;
   sharedFileName: string;
   onSyncToEditor: (bytes: ArrayBuffer, fileName: string) => void;
+  onGoHome?: () => void;
 }
 
 type ToolSection = 'split' | 'compress' | 'einvoice' | 'compare' | 'images_meta';
@@ -55,6 +57,7 @@ export const PdfToolsView: React.FC<PdfToolsViewProps> = ({
   sharedPdfBytes,
   sharedFileName,
   onSyncToEditor,
+  onGoHome,
 }) => {
   const [activeTool, setActiveTool] = useState<ToolSection>('split');
   const [localPdfBytes, setLocalPdfBytes] = useState<ArrayBuffer | null>(null);
@@ -323,6 +326,16 @@ export const PdfToolsView: React.FC<PdfToolsViewProps> = ({
       {/* Sub-Navigation Bar */}
       <div className="bg-white border-b border-[#E8E8ED] px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-sm z-20">
         <div className="flex flex-wrap items-center gap-1.5">
+          {onGoHome && (
+            <button
+              onClick={onGoHome}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-gray-700 hover:text-black bg-[#F5F5F7] hover:bg-gray-200 border border-gray-200 transition cursor-pointer mr-1 shadow-xs"
+              title="Zurück zum Hauptmenü / Startseite"
+            >
+              <ArrowLeft size={14} />
+              <span>Startseite</span>
+            </button>
+          )}
           {[
             { id: 'split', label: 'PDF Teilen & Extrahieren', icon: Scissors },
             { id: 'compress', label: 'Komprimieren (Größe)', icon: Minimize2 },

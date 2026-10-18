@@ -25,12 +25,14 @@ interface PdfMergeViewProps {
   sharedPdfBytes: ArrayBuffer | null;
   sharedFileName: string;
   onSyncToEditor: (bytes: ArrayBuffer, fileName: string) => void;
+  onGoHome?: () => void;
 }
 
 export const PdfMergeView: React.FC<PdfMergeViewProps> = ({
   sharedPdfBytes,
   sharedFileName,
   onSyncToEditor,
+  onGoHome,
 }) => {
   const [pages, setPages] = useState<MergePageItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -281,6 +283,16 @@ export const PdfMergeView: React.FC<PdfMergeViewProps> = ({
       {/* Top Action Bar */}
       <div className="min-h-[56px] bg-white border-b border-[#E8E8ED] px-6 py-1.5 flex flex-wrap items-center justify-between gap-2 shadow-sm z-20">
         <div className="flex flex-wrap items-center gap-2.5">
+          {onGoHome && (
+            <button
+              onClick={onGoHome}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-700 hover:text-black bg-[#F5F5F7] hover:bg-gray-200 border border-gray-200 transition cursor-pointer"
+              title="Zur Startseite / Hauptmenü zurückkehren"
+            >
+              <ArrowLeft size={14} />
+              <span>Startseite</span>
+            </button>
+          )}
           <label className="flex items-center gap-2 px-4 py-1.5 bg-[#0071E3] hover:bg-[#0077ED] text-white rounded-xl text-xs font-semibold cursor-pointer shadow-sm transition">
             <Plus size={15} />
             <span>PDFs & Bilder hinzufügen</span>

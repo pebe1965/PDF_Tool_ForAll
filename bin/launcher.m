@@ -281,6 +281,68 @@ static NSString *findPythonExecutable(NSString *appDir) {
     return nil;
 }
 
+// Dateiauswahl-Dialog (<input type="file">) in WKWebView unterstuetzen
+- (void)webView:(WKWebView *)webView runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSArray<NSURL *> * _Nullable URLs))completionHandler {
+    NSOpenPanel *panel = [NSOpenPanel openPanel];
+    panel.allowsMultipleSelection = parameters.allowsMultipleSelection;
+    panel.canChooseDirectories = parameters.allowsDirectories;
+    panel.canChooseFiles = YES;
+    panel.resolvesAliases = YES;
+    
+    if (self.window) {
+        [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse result) {
+            if (result == NSModalResponseOK) {
+                completionHandler(panel.URLs);
+            } else {
+                completionHandler(nil);
+            }
+        }];
+    } else {
+        [panel beginWithCompletionHandler:^(NSModalResponse result) {
+            if (result == NSModalResponseOK) {
+                completionHandler(panel.URLs);
+            } else {
+                completionHandler(nil);
+            }
+        }];
+    }
+}
+
+// JavaScript alert(...) in nativem NSAlert anzeigen
+- (void)webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"PDF Tool ForAll";
+    alert.informativeText = message ?: @"";
+    alert.alertStyle = NSAlertStyleInformational;
+    [alert addButtonWithTitle:@"OK"];
+    if (self.window) {
+        [alert beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse returnCode) {
+            completionHandler();
+        }];
+    } else {
+        [alert runModal];
+        completionHandler();
+    }
+}
+
+// JavaScript confirm(...) in nativem NSAlert mit OK/Abbrechen bestaetigen
+- (void)webView:(WKWebView *)webView runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(BOOL result))completionHandler {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"PDF Tool ForAll";
+    alert.informativeText = message ?: @"";
+    alert.alertStyle = NSAlertStyleInformational;
+    [alert addButtonWithTitle:@"OK"];
+    [alert addButtonWithTitle:@"Abbrechen"];
+    if (self.window) {
+        [alert beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse returnCode) {
+            completionHandler(returnCode == NSAlertFirstButtonReturn);
+        }];
+    } else {
+        NSModalResponse returnCode = [alert runModal];
+        completionHandler(returnCode == NSAlertFirstButtonReturn);
+    }
+}
+
 - (void)setupMenus {
     NSMenu *mainMenu = [[NSMenu alloc] init];
     

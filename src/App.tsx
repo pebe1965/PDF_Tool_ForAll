@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { Header } from './components/Header';
+import { Header, AppTab } from './components/Header';
 import { PdfEditorView } from './components/PdfEditorView';
 import { PdfMergeView } from './components/PdfMergeView';
 import { PdfToolsView } from './components/PdfToolsView';
 import { SettingsModal } from './components/SettingsModal';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'editor' | 'merge' | 'tools'>('editor');
+  const [activeTab, setActiveTab] = useState<AppTab>('home');
   const [sharedPdfBytes, setSharedPdfBytes] = useState<ArrayBuffer | null>(null);
   const [sharedFileName, setSharedFileName] = useState<string>('Dokument.pdf');
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
@@ -30,6 +30,7 @@ export function App() {
       <Header
         activeTab={activeTab}
         onTabChange={setActiveTab}
+        hasActiveDocument={Boolean(sharedPdfBytes)}
         onOpenAiAssistant={() => {
           setActiveTab('editor');
           setIsAiModalOpen(true);
@@ -38,13 +39,16 @@ export function App() {
       />
       <main className="flex-1 overflow-hidden relative">
         {/* Keep views mounted and toggle visibility so no user state or uploads are lost */}
-        <div className={`h-full w-full ${activeTab === 'editor' ? 'block' : 'hidden'}`}>
+        <div className={`h-full w-full ${activeTab === 'home' || activeTab === 'editor' ? 'block' : 'hidden'}`}>
           <PdfEditorView
             sharedPdfBytes={sharedPdfBytes}
             sharedFileName={sharedFileName}
             onPdfUpdate={handleEditorPdfUpdate}
             onOpenMergeTab={() => setActiveTab('merge')}
             onOpenToolsTab={() => setActiveTab('tools')}
+            onGoHome={() => setActiveTab('home')}
+            isHomeView={activeTab === 'home'}
+            onGoToEditor={() => setActiveTab('editor')}
             isAiModalOpen={isAiModalOpen}
             onToggleAiModal={setIsAiModalOpen}
           />
@@ -55,6 +59,7 @@ export function App() {
             sharedPdfBytes={sharedPdfBytes}
             sharedFileName={sharedFileName}
             onSyncToEditor={handleSyncToEditor}
+            onGoHome={() => setActiveTab('home')}
           />
         </div>
 
@@ -63,6 +68,7 @@ export function App() {
             sharedPdfBytes={sharedPdfBytes}
             sharedFileName={sharedFileName}
             onSyncToEditor={handleSyncToEditor}
+            onGoHome={() => setActiveTab('home')}
           />
         </div>
       </main>
