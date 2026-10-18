@@ -162,6 +162,16 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   const [currentStrokePoints, setCurrentStrokePoints] = useState<{ x: number; y: number }[]>([]);
   const [freehandColor, setFreehandColor] = useState('#0071E3');
 
+  // Page Scroll & Wheel Navigation
+  const viewportScrollRef = useRef<HTMLDivElement>(null);
+  const lastWheelTurnRef = useRef<number>(0);
+  const accumulatedWheelDeltaRef = useRef<number>(0);
+  const [pageInputVal, setPageInputVal] = useState<string>('1');
+
+  useEffect(() => {
+    setPageInputVal(String(currentPage));
+  }, [currentPage]);
+
   const isAiOpen = externalIsAiModalOpen !== undefined ? externalIsAiModalOpen : internalIsAiModalOpen;
   const setAiOpen = (val: boolean) => {
     if (onToggleAiModal) onToggleAiModal(val);
@@ -242,7 +252,70 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     return () => clearTimeout(timer);
   }, [pdfBytes, annotations, documentTitle, currentPage, file]);
 
-  // Keyboard shortcuts: Cmd+S (Save dialog), Cmd+Z (Undo), Cmd+Shift+Z / Cmd+Y (Redo), Cmd+F (Search), Delete/Backspace
+  // Central Page Change Handler (with scroll positioning)
+  const handlePageChange = useCallback(
+    (newPage: number, targetScroll: 'top' | 'bottom' | 'preserve' = 'top') => {
+      if (numPages <= 0) return;
+      const page = Math.max(1, Math.min(numPages, newPage));
+      if (page === currentPage) return;
+      setCurrentPage(page);
+      setPageInputVal(String(page));
+      setSelectedAnnId(null);
+      requestAnimationFrame(() => {
+        if (viewportScrollRef.current) {
+          if (targetScroll === 'top') {
+            viewportScrollRef.current.scrollTop = 0;
+          } else if (targetScroll === 'bottom') {
+            viewportScrollRef.current.scrollTop = viewportScrollRef.current.scrollHeight;
+          }
+        }
+      });
+    },
+    [numPages, currentPage]
+  );
+
+  // Mouse wheel / Trackpad page flipping at boundary
+  const handleViewportWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (numPages <= 1) return;
+    if (e.metaKey || e.ctrlKey) return; // Allow pinch/Cmd zoom without page turn
+
+    const container = viewportScrollRef.current;
+    if (!container) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    const isScrollable = scrollHeight > clientHeight + 10;
+    const isAtBottom = !isScrollable || scrollTop + clientHeight >= scrollHeight - 6;
+    const isAtTop = !isScrollable || scrollTop <= 6;
+
+    const now = Date.now();
+    const timeSinceLast = now - lastWheelTurnRef.current;
+    if (timeSinceLast > 350) {
+      accumulatedWheelDeltaRef.current = 0;
+    }
+
+    // Scroll Down past bottom -> Next Page
+    if (e.deltaY > 0 && isAtBottom && currentPage < numPages) {
+      accumulatedWheelDeltaRef.current += e.deltaY;
+      if (accumulatedWheelDeltaRef.current > 45 && timeSinceLast > 350) {
+        lastWheelTurnRef.current = now;
+        accumulatedWheelDeltaRef.current = 0;
+        handlePageChange(currentPage + 1, 'top');
+      }
+    }
+    // Scroll Up past top -> Previous Page
+    else if (e.deltaY < 0 && isAtTop && currentPage > 1) {
+      accumulatedWheelDeltaRef.current += e.deltaY;
+      if (accumulatedWheelDeltaRef.current < -45 && timeSinceLast > 350) {
+        lastWheelTurnRef.current = now;
+        accumulatedWheelDeltaRef.current = 0;
+        handlePageChange(currentPage - 1, 'bottom');
+      }
+    } else {
+      accumulatedWheelDeltaRef.current = 0;
+    }
+  };
+
+  // Keyboard shortcuts: Cmd+S (Save), Cmd+Z (Undo), Cmd+Shift+Z / Cmd+Y (Redo), Cmd+F (Search), Delete, Arrow/Page Navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -261,6 +334,24 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       }
 
       if (isInput) return;
+
+      // Page Navigation with Left/Right or PageUp/PageDown (when not editing an annotation)
+      if (numPages > 1 && !selectedAnnId) {
+        if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+          if (currentPage < numPages) {
+            e.preventDefault();
+            handlePageChange(currentPage + 1, 'top');
+            return;
+          }
+        }
+        if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+          if (currentPage > 1) {
+            e.preventDefault();
+            handlePageChange(currentPage - 1, 'top');
+            return;
+          }
+        }
+      }
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -287,7 +378,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo, selectedAnnId, pdfBytes, pushAnnotationsChange]);
+  }, [handleUndo, handleRedo, selectedAnnId, pdfBytes, pushAnnotationsChange, numPages, currentPage, handlePageChange]);
 
   // Reload an updated PDF buffer into pdfjs viewer & inspect AcroForm fields
   const reloadPdfFromBuffer = async (
@@ -1732,10 +1823,10 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
             <div className="flex items-center gap-2.5 bg-[#F5F5F7] px-2.5 py-1 rounded-xl">
               <div className="flex items-center gap-0.5">
                 <button
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  onClick={() => handlePageChange(currentPage - 1, 'top')}
                   disabled={currentPage <= 1}
-                  className="p-1 rounded hover:bg-white disabled:opacity-30 transition"
-                  title="Vorherige Seite"
+                  className="p-1 rounded hover:bg-white disabled:opacity-30 transition cursor-pointer"
+                  title="Vorherige Seite (←)"
                 >
                   <ChevronLeft size={16} />
                 </button>
@@ -1743,10 +1834,10 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                   {currentPage} / {numPages}
                 </span>
                 <button
-                  onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
+                  onClick={() => handlePageChange(currentPage + 1, 'top')}
                   disabled={currentPage >= numPages}
-                  className="p-1 rounded hover:bg-white disabled:opacity-30 transition"
-                  title="Nächste Seite"
+                  className="p-1 rounded hover:bg-white disabled:opacity-30 transition cursor-pointer"
+                  title="Nächste Seite (→)"
                 >
                   <ChevronRight size={16} />
                 </button>
@@ -1975,7 +2066,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                     }`}
                   >
                     <button
-                      onClick={() => setCurrentPage(pNum)}
+                      onClick={() => handlePageChange(pNum, 'top')}
                       className="w-full flex flex-col items-center"
                     >
                       <div className="w-24 h-32 bg-gray-50 border border-gray-200 rounded flex items-center justify-center text-xs font-semibold text-gray-400 shadow-inner">
@@ -2025,64 +2116,144 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
               </div>
             </div>
 
-            {/* PDF Viewport Scroll Area */}
-            <div
-              className="flex-1 overflow-auto flex items-start justify-center p-8 bg-[#E5E5EA]"
-              onClick={() => setSelectedAnnId(null)}
-              onDragOver={handleDragOver}
-              onDrop={handleViewportDrop}
-            >
+            {/* PDF Viewport Wrapper (Contains scroll area + floating page navigation controls) */}
+            <div className="flex-1 flex flex-col relative overflow-hidden bg-[#E5E5EA]">
+              {/* PDF Viewport Scroll Area with Mousewheel / Trackpad Boundary Paging */}
               <div
-                ref={pageContainerRef}
-                onClick={handlePageClick}
-                onPointerDown={handlePagePointerDown}
-                onPointerMove={handlePagePointerMove}
-                onPointerUp={handlePagePointerUp}
+                ref={viewportScrollRef}
+                onWheel={handleViewportWheel}
+                className="flex-1 overflow-auto flex items-start justify-center p-8 select-none"
+                onClick={() => setSelectedAnnId(null)}
                 onDragOver={handleDragOver}
                 onDrop={handleViewportDrop}
-                className={`relative bg-white shadow-2xl rounded-sm transition-all ${
-                  activeTool !== 'select' ? 'cursor-crosshair' : 'cursor-default'
-                }`}
-                style={{
-                  width: canvasDimensions.width || 'auto',
-                  height: canvasDimensions.height || 'auto',
-                }}
               >
-                {/* Mozilla PDF.js Canvas */}
-                <canvas ref={canvasRef} className="block" />
+                <div
+                  ref={pageContainerRef}
+                  onClick={handlePageClick}
+                  onPointerDown={handlePagePointerDown}
+                  onPointerMove={handlePagePointerMove}
+                  onPointerUp={handlePagePointerUp}
+                  onDragOver={handleDragOver}
+                  onDrop={handleViewportDrop}
+                  className={`relative bg-white shadow-2xl rounded-sm transition-all ${
+                    activeTool !== 'select' ? 'cursor-crosshair' : 'cursor-default'
+                  }`}
+                  style={{
+                    width: canvasDimensions.width || 'auto',
+                    height: canvasDimensions.height || 'auto',
+                  }}
+                >
+                  {/* Mozilla PDF.js Canvas */}
+                  <canvas ref={canvasRef} className="block" />
 
-                {/* Live Freehand Stroke Preview */}
-                {isDrawingStroke && currentStrokePoints.length > 1 && (
-                  <svg className="absolute inset-0 w-full h-full pointer-events-none z-30">
-                    <polyline
-                      points={currentStrokePoints
-                        .map((p) => `${p.x * canvasDimensions.width},${p.y * canvasDimensions.height}`)
-                        .join(' ')}
-                      fill="none"
-                      stroke={freehandColor}
-                      strokeWidth={2.5}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+                  {/* Live Freehand Stroke Preview */}
+                  {isDrawingStroke && currentStrokePoints.length > 1 && (
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none z-30">
+                      <polyline
+                        points={currentStrokePoints
+                          .map((p) => `${p.x * canvasDimensions.width},${p.y * canvasDimensions.height}`)
+                          .join(' ')}
+                        fill="none"
+                        stroke={freehandColor}
+                        strokeWidth={2.5}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+
+                  {/* Overlaid Interactive Annotations Layer */}
+                  {canvasDimensions.width > 0 && (
+                    <AnnotationLayer
+                      pageNumber={currentPage}
+                      pageWidth={canvasDimensions.width}
+                      pageHeight={canvasDimensions.height}
+                      scale={scale}
+                      annotations={annotations}
+                      onUpdateAnnotation={handleUpdateAnnotation}
+                      onDeleteAnnotation={handleDeleteAnnotation}
+                      onDuplicateAnnotation={handleDuplicateAnnotation}
+                      selectedAnnotationId={selectedAnnId}
+                      onSelectAnnotation={setSelectedAnnId}
                     />
-                  </svg>
-                )}
-
-                {/* Overlaid Interactive Annotations Layer */}
-                {canvasDimensions.width > 0 && (
-                  <AnnotationLayer
-                    pageNumber={currentPage}
-                    pageWidth={canvasDimensions.width}
-                    pageHeight={canvasDimensions.height}
-                    scale={scale}
-                    annotations={annotations}
-                    onUpdateAnnotation={handleUpdateAnnotation}
-                    onDeleteAnnotation={handleDeleteAnnotation}
-                    onDuplicateAnnotation={handleDuplicateAnnotation}
-                    selectedAnnotationId={selectedAnnId}
-                    onSelectAnnotation={setSelectedAnnId}
-                  />
-                )}
+                  )}
+                </div>
               </div>
+
+              {/* Floating Left Arrow: Previous Page */}
+              {numPages > 1 && currentPage > 1 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handlePageChange(currentPage - 1, 'top');
+                  }}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-white/90 hover:bg-white text-gray-700 hover:text-[#0071E3] shadow-xl border border-gray-200/80 flex items-center justify-center transition backdrop-blur-md hover:scale-110 active:scale-95 cursor-pointer group"
+                  title="Vorherige Seite (← oder Bild ↑)"
+                >
+                  <ChevronLeft size={22} className="group-hover:-translate-x-0.5 transition" />
+                </button>
+              )}
+
+              {/* Floating Right Arrow: Next Page */}
+              {numPages > 1 && currentPage < numPages && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handlePageChange(currentPage + 1, 'top');
+                  }}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-white/90 hover:bg-white text-gray-700 hover:text-[#0071E3] shadow-xl border border-gray-200/80 flex items-center justify-center transition backdrop-blur-md hover:scale-110 active:scale-95 cursor-pointer group"
+                  title="Nächste Seite (→ oder Bild ↓)"
+                >
+                  <ChevronRight size={22} className="group-hover:translate-x-0.5 transition" />
+                </button>
+              )}
+
+              {/* Floating Bottom Pager Bar */}
+              {numPages > 1 && (
+                <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3.5 py-1.5 bg-white/90 backdrop-blur-md border border-gray-200/80 rounded-2xl shadow-xl select-none transition hover:bg-white">
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1, 'top')}
+                    disabled={currentPage <= 1}
+                    className="p-1 rounded-xl hover:bg-gray-100 disabled:opacity-30 text-gray-700 disabled:hover:bg-transparent transition cursor-pointer"
+                    title="Vorherige Seite (←)"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 px-1">
+                    <span>Seite</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={numPages}
+                      value={pageInputVal}
+                      onChange={(e) => setPageInputVal(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const p = parseInt(pageInputVal, 10);
+                          if (!isNaN(p)) handlePageChange(p, 'top');
+                        }
+                      }}
+                      onBlur={() => {
+                        const p = parseInt(pageInputVal, 10);
+                        if (!isNaN(p)) handlePageChange(p, 'top');
+                        else setPageInputVal(String(currentPage));
+                      }}
+                      className="w-11 text-center bg-gray-100 focus:bg-white border border-gray-300 focus:border-[#0071E3] rounded-lg py-0.5 text-xs font-bold text-gray-900 focus:outline-none"
+                    />
+                    <span className="text-gray-400">von {numPages}</span>
+                  </div>
+
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1, 'top')}
+                    disabled={currentPage >= numPages}
+                    className="p-1 rounded-xl hover:bg-gray-100 disabled:opacity-30 text-gray-700 disabled:hover:bg-transparent transition cursor-pointer"
+                    title="Nächste Seite (→)"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </>

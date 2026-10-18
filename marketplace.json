@@ -5,7 +5,7 @@
   "integrations": [
     {
       "module": "Bearbeiten & Signieren",
-      "description": "Text an beliebiger Stelle einfügen, Unterschrift mit Maus, Trackpad oder Apple Pencil zeichnen, Textmarker, Symbole, Freihand-Stift und Bilder frei platzieren."
+      "description": "Text an beliebiger Stelle einfügen, flüssig durch mehrseitige Dokumente blättern, Unterschrift zeichnen, Textmarker, Symbole, Freihand-Stift und Bilder frei platzieren."
     },
     {
       "module": "Textverarbeitung",
