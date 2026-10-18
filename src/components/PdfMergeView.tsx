@@ -12,6 +12,12 @@ import {
   RefreshCw,
   CheckSquare,
   GripVertical,
+  Eye,
+  ZoomIn,
+  ZoomOut,
+  ChevronLeft,
+  ChevronRight,
+  X,
 } from 'lucide-react';
 import { pdfjsLib } from '../lib/pdfWorker';
 import { MergePageItem } from '../types/pdf';
@@ -28,6 +34,345 @@ interface PdfMergeViewProps {
   onGoHome?: () => void;
 }
 
+interface PagePreviewModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  pages: MergePageItem[];
+  currentIndex: number;
+  onSelectIndex: (index: number) => void;
+  onRotatePage: (index: number) => void;
+  onMovePage: (index: number, direction: 'left' | 'right') => void;
+  onDeletePage: (index: number) => void;
+}
+
+const PagePreviewModal: React.FC<PagePreviewModalProps> = ({
+  isOpen,
+  onClose,
+  pages,
+  currentIndex,
+  onSelectIndex,
+  onRotatePage,
+  onMovePage,
+  onDeletePage,
+}) => {
+  const [zoom, setZoom] = useState<number>(1.2);
+  const [rendering, setRendering] = useState<boolean>(false);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const renderTaskRef = useRef<any>(null);
+  const docCacheRef = useRef<Map<string, any>>(new Map());
+
+  const currentPage = pages[currentIndex];
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        if (currentIndex > 0) {
+          onSelectIndex(currentIndex - 1);
+        }
+      } else if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+        e.preventDefault();
+        if (currentIndex < pages.length - 1) {
+          onSelectIndex(currentIndex + 1);
+        }
+      } else if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        onRotatePage(currentIndex);
+      } else if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        setZoom((z) => Math.min(3.0, +(z + 0.2).toFixed(1)));
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        setZoom((z) => Math.max(0.6, +(z - 0.2).toFixed(1)));
+      } else if (e.key === '0') {
+        e.preventDefault();
+        setZoom(1.2);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, currentIndex, pages.length, onClose, onSelectIndex, onRotatePage]);
+
+  // High-res PDF.js canvas rendering
+  useEffect(() => {
+    if (!isOpen || !currentPage) return;
+
+    let isCancelled = false;
+
+    const renderPage = async () => {
+      setRendering(true);
+      try {
+        if (renderTaskRef.current) {
+          try {
+            renderTaskRef.current.cancel();
+          } catch (_) {}
+          renderTaskRef.current = null;
+        }
+
+        let doc = docCacheRef.current.get(currentPage.fileId);
+        if (!doc) {
+          const loadingTask = pdfjsLib.getDocument({
+            data: currentPage.fileBytes.slice(0),
+          });
+          doc = await loadingTask.promise;
+          docCacheRef.current.set(currentPage.fileId, doc);
+        }
+
+        if (isCancelled) return;
+
+        const page = await doc.getPage(currentPage.pageIndex + 1);
+        if (isCancelled) return;
+
+        const dpr = window.devicePixelRatio || 1;
+        const effectiveScale = 1.35 * zoom;
+        const viewport = page.getViewport({
+          scale: effectiveScale * dpr,
+          rotation: currentPage.rotation,
+        });
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = `${Math.round(viewport.width / dpr)}px`;
+        canvas.style.height = `${Math.round(viewport.height / dpr)}px`;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const renderTask = page.render({
+          canvasContext: ctx,
+          viewport,
+        });
+        renderTaskRef.current = renderTask;
+        await renderTask.promise;
+      } catch (err: any) {
+        if (err?.name !== 'RenderingCancelledException') {
+          console.error('Fehler beim Rendern der Vorschauseite:', err);
+        }
+      } finally {
+        if (!isCancelled) {
+          setRendering(false);
+        }
+      }
+    };
+
+    renderPage();
+
+    return () => {
+      isCancelled = true;
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch (_) {}
+        renderTaskRef.current = null;
+      }
+    };
+  }, [isOpen, currentPage?.id, currentPage?.rotation, currentPage?.pageIndex, zoom]);
+
+  if (!isOpen || !currentPage) return null;
+
+  const handleMove = (direction: 'left' | 'right') => {
+    const target = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
+    if (target < 0 || target >= pages.length) return;
+    onMovePage(currentIndex, direction);
+    onSelectIndex(target);
+  };
+
+  const handleDelete = () => {
+    if (window.confirm(`Möchtest du Seite #${currentIndex + 1} wirklich entfernen?`)) {
+      onDeletePage(currentIndex);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-[#1E1E20] text-white rounded-2xl shadow-2xl border border-white/10 flex flex-col w-full max-w-5xl h-[92vh] overflow-hidden">
+        {/* Header */}
+        <div className="h-14 bg-[#2C2C2E] border-b border-white/10 px-4 sm:px-6 flex items-center justify-between gap-3 shrink-0">
+          {/* Left: Info */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="bg-[#0071E3] text-white text-xs font-bold px-2.5 py-1 rounded-lg shrink-0">
+              Seite {currentIndex + 1} / {pages.length}
+            </span>
+            <span
+              className="text-sm font-medium text-gray-200 truncate max-w-[180px] sm:max-w-xs"
+              title={currentPage.fileName}
+            >
+              {currentPage.fileName}
+            </span>
+            <span className="text-xs text-gray-400 hidden md:inline">
+              (Original: S. {currentPage.pageIndex + 1})
+            </span>
+            {currentPage.rotation !== 0 && (
+              <span className="text-[11px] bg-white/10 text-amber-300 px-2 py-0.5 rounded font-mono">
+                {currentPage.rotation}°
+              </span>
+            )}
+          </div>
+
+          {/* Center: Controls (Zoom, Rotate, Move) */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Zoom Controls */}
+            <div className="flex items-center bg-white/10 rounded-xl px-1.5 py-1 text-xs">
+              <button
+                onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.2).toFixed(1)))}
+                disabled={zoom <= 0.6}
+                className="p-1 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white disabled:opacity-30 transition"
+                title="Verkleinern (-)"
+              >
+                <ZoomOut size={14} />
+              </button>
+              <button
+                onClick={() => setZoom(1.2)}
+                className="px-1.5 text-[11px] font-mono text-gray-300 hover:text-white transition"
+                title="Auf Standardgröße zurücksetzen (0)"
+              >
+                {Math.round((zoom / 1.2) * 100)}%
+              </button>
+              <button
+                onClick={() => setZoom((z) => Math.min(3.0, +(z + 0.2).toFixed(1)))}
+                disabled={zoom >= 3.0}
+                className="p-1 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white disabled:opacity-30 transition"
+                title="Vergrößern (+)"
+              >
+                <ZoomIn size={14} />
+              </button>
+            </div>
+
+            {/* Rotate */}
+            <button
+              onClick={() => onRotatePage(currentIndex)}
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-xs font-medium rounded-xl text-gray-200 hover:text-white transition"
+              title="Um 90° drehen (R)"
+            >
+              <RotateCw size={13} />
+              <span className="hidden sm:inline">Drehen</span>
+            </button>
+
+            {/* Move Left */}
+            <button
+              onClick={() => handleMove('left')}
+              disabled={currentIndex === 0}
+              className="p-1.5 bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white rounded-xl disabled:opacity-20 transition"
+              title="Nach links schieben"
+            >
+              <ArrowLeft size={14} />
+            </button>
+
+            {/* Move Right */}
+            <button
+              onClick={() => handleMove('right')}
+              disabled={currentIndex === pages.length - 1}
+              className="p-1.5 bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white rounded-xl disabled:opacity-20 transition"
+              title="Nach rechts schieben"
+            >
+              <ArrowRight size={14} />
+            </button>
+
+            {/* Delete */}
+            <button
+              onClick={handleDelete}
+              className="p-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 hover:text-red-200 rounded-xl transition"
+              title="Diese Seite entfernen"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+
+          {/* Right: Close */}
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition cursor-pointer"
+            title="Vorschau schließen (Esc)"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Body: Canvas & Navigation Chevrons */}
+        <div className="flex-1 overflow-auto bg-[#18181A] p-6 flex items-center justify-center relative select-none">
+          {/* Left Chevron */}
+          {currentIndex > 0 && (
+            <button
+              onClick={() => onSelectIndex(currentIndex - 1)}
+              className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-black/60 hover:bg-[#0071E3] text-white flex items-center justify-center shadow-xl backdrop-blur-md transition-all hover:scale-110 cursor-pointer"
+              title="Vorherige Seite (Pfeil links)"
+            >
+              <ChevronLeft size={24} />
+            </button>
+          )}
+
+          {/* Page Canvas Container with Shadow */}
+          <div className="relative max-w-full max-h-full flex items-center justify-center">
+            {rendering && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px] z-10 rounded-sm">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-black/75 rounded-full text-xs text-white shadow-lg">
+                  <Loader2 size={14} className="animate-spin text-[#0071E3]" />
+                  <span>Wird gerendert...</span>
+                </div>
+              </div>
+            )}
+
+            <canvas
+              ref={canvasRef}
+              className="bg-white shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-sm block max-w-full"
+            />
+          </div>
+
+          {/* Right Chevron */}
+          {currentIndex < pages.length - 1 && (
+            <button
+              onClick={() => onSelectIndex(currentIndex + 1)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-black/60 hover:bg-[#0071E3] text-white flex items-center justify-center shadow-xl backdrop-blur-md transition-all hover:scale-110 cursor-pointer"
+              title="Nächste Seite (Pfeil rechts)"
+            >
+              <ChevronRight size={24} />
+            </button>
+          )}
+        </div>
+
+        {/* Footer info bar */}
+        <div className="h-10 bg-[#242426] border-t border-white/10 px-4 sm:px-6 flex items-center justify-between text-xs text-gray-400 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 overflow-hidden text-[11px] sm:text-xs">
+            <span className="hidden sm:inline">Tastatur:</span>
+            <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-gray-300">←</span>
+            <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-gray-300">→</span>
+            <span>Blättern</span>
+            <span className="text-gray-600">•</span>
+            <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-gray-300">R</span>
+            <span>Drehen</span>
+            <span className="text-gray-600">•</span>
+            <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-gray-300">+</span>
+            <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-gray-300">-</span>
+            <span>Zoom</span>
+            <span className="text-gray-600">•</span>
+            <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-gray-300">Esc</span>
+            <span>Schließen</span>
+          </div>
+
+          <div className="text-xs font-medium text-gray-300 shrink-0">
+            Seite {currentIndex + 1} von {pages.length}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const PdfMergeView: React.FC<PdfMergeViewProps> = ({
   sharedPdfBytes,
   sharedFileName,
@@ -41,6 +386,7 @@ export const PdfMergeView: React.FC<PdfMergeViewProps> = ({
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [outputFileName, setOutputFileName] = useState<string>('Zusammengefuehrtes_Dokument');
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const lastLoadedSharedBufferRef = useRef<ArrayBuffer | null>(null);
 
   const generatePageThumbnail = async (
@@ -503,10 +849,15 @@ export const PdfMergeView: React.FC<PdfMergeViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Thumbnail Preview with Rotation */}
+                  {/* Thumbnail Preview with Rotation & Hover Action */}
                   <div
                     onClick={() => toggleSelectPage(item.id)}
-                    className="h-52 bg-gray-100 flex items-center justify-center p-3 overflow-hidden"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewIndex(index);
+                    }}
+                    className="h-52 bg-gray-100 flex items-center justify-center p-3 overflow-hidden relative group/thumb cursor-pointer select-none"
+                    title="Klicken zum Auswählen, Doppelklick für Vorschau"
                   >
                     {item.thumbnailUrl ? (
                       <img
@@ -518,6 +869,22 @@ export const PdfMergeView: React.FC<PdfMergeViewProps> = ({
                     ) : (
                       <div className="text-gray-400 text-xs">Vorschau lädt...</div>
                     )}
+
+                    {/* Hover preview pill button */}
+                    <div className="absolute inset-0 bg-black/25 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPreviewIndex(index);
+                        }}
+                        className="pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 bg-white/95 hover:bg-white text-gray-800 hover:text-[#0071E3] rounded-xl text-xs font-semibold shadow-lg backdrop-blur-sm transition-all transform scale-95 group-hover/thumb:scale-100 cursor-pointer"
+                        title="Vorschau in voller Größe"
+                      >
+                        <Eye size={13} />
+                        <span>Vorschau</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Action Buttons Toolbar */}
@@ -525,7 +892,7 @@ export const PdfMergeView: React.FC<PdfMergeViewProps> = ({
                     <button
                       onClick={() => handleMovePage(index, 'left')}
                       disabled={index === 0}
-                      className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 disabled:opacity-20 transition"
+                      className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 disabled:opacity-20 transition cursor-pointer"
                       title="Nach links verschieben"
                     >
                       <ArrowLeft size={14} />
@@ -533,15 +900,26 @@ export const PdfMergeView: React.FC<PdfMergeViewProps> = ({
 
                     <button
                       onClick={() => handleRotatePage(index)}
-                      className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-600 hover:text-[#0071E3] transition"
+                      className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-600 hover:text-[#0071E3] transition cursor-pointer"
                       title="Um 90° drehen"
                     >
                       <RotateCw size={14} />
                     </button>
 
                     <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewIndex(index);
+                      }}
+                      className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-600 hover:text-[#0071E3] transition cursor-pointer"
+                      title="Seite vergrößert ansehen (Vorschau)"
+                    >
+                      <Eye size={14} />
+                    </button>
+
+                    <button
                       onClick={() => handleDeletePage(index)}
-                      className="p-1.5 rounded-lg hover:bg-red-50 text-gray-600 hover:text-red-600 transition"
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-gray-600 hover:text-red-600 transition cursor-pointer"
                       title="Seite entfernen"
                     >
                       <Trash2 size={14} />
@@ -550,7 +928,7 @@ export const PdfMergeView: React.FC<PdfMergeViewProps> = ({
                     <button
                       onClick={() => handleMovePage(index, 'right')}
                       disabled={index === pages.length - 1}
-                      className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 disabled:opacity-20 transition"
+                      className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 disabled:opacity-20 transition cursor-pointer"
                       title="Nach rechts verschieben"
                     >
                       <ArrowRight size={14} />
@@ -561,6 +939,32 @@ export const PdfMergeView: React.FC<PdfMergeViewProps> = ({
             })}
           </div>
         </div>
+      )}
+
+      {/* Page Preview Modal */}
+      {previewIndex !== null && previewIndex >= 0 && previewIndex < pages.length && (
+        <PagePreviewModal
+          isOpen={previewIndex !== null}
+          onClose={() => setPreviewIndex(null)}
+          pages={pages}
+          currentIndex={previewIndex}
+          onSelectIndex={setPreviewIndex}
+          onRotatePage={handleRotatePage}
+          onMovePage={(idx, dir) => {
+            const target = dir === 'left' ? idx - 1 : idx + 1;
+            if (target < 0 || target >= pages.length) return;
+            handleMovePage(idx, dir);
+            setPreviewIndex(target);
+          }}
+          onDeletePage={(idx) => {
+            handleDeletePage(idx);
+            if (pages.length <= 1) {
+              setPreviewIndex(null);
+            } else if (idx >= pages.length - 1) {
+              setPreviewIndex(pages.length - 2);
+            }
+          }}
+        />
       )}
     </div>
   );
