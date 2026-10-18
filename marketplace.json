@@ -33,8 +33,8 @@
     }
   ],
   "requirements": [
-    "macOS oder Windows",
-    "Python 3 (unter macOS über die Entwicklerwerkzeuge, unter Windows von python.org)",
-    "Öffnet sich im Browser"
+    "macOS 12 oder neuer (Apple Silicon oder Intel) oder Windows",
+    "Python 3",
+    "Natives Mac-Fenster (unter Windows im Browser)"
   ]
 }

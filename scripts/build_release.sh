@@ -45,39 +45,21 @@ cat << 'EOF' > "$APP_BUNDLE/Contents/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.3.2</string>
+    <string>1.4.0</string>
     <key>CFBundleVersion</key>
-    <string>1.3.2</string>
+    <string>1.4.0</string>
     <key>LSMinimumSystemVersion</key>
-    <string>10.13</string>
+    <string>12.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>
 </plist>
 EOF
 
-# MacOS Launcher schreiben
-cat << 'EOF' > "$APP_BUNDLE/Contents/MacOS/launcher"
-#!/bin/bash
-DIR="$(cd "$(dirname "$0")/../Resources/app" && pwd)"
-cd "$DIR"
-
-PY_CMD=""
-for p in /usr/bin/python3 /opt/homebrew/bin/python3 /usr/local/bin/python3 $(which python3 2>/dev/null); do
-    if [ -x "$p" ]; then
-        PY_CMD="$p"
-        break
-    fi
-done
-
-if [ -z "$PY_CMD" ]; then
-    osascript -e 'display dialog "Python 3 wurde auf diesem Mac nicht gefunden." buttons {"OK"} default button "OK" with icon stop'
-    exit 1
-fi
-
-exec "$PY_CMD" server.py
-EOF
-
+# Nativer App-Launcher (Cocoa + WebKit Universal 2) kompilieren
+echo "🔨 Kompiliere nativen App-Launcher (Cocoa + WebKit Universal 2)..."
+clang -fobjc-arc -framework Cocoa -framework WebKit -mmacosx-version-min=12.0 -arch arm64 -arch x86_64 -O2 \
+    "$PROJECT_DIR/bin/launcher.m" -o "$APP_BUNDLE/Contents/MacOS/launcher"
 chmod +x "$APP_BUNDLE/Contents/MacOS/launcher"
 
 # Icon kopieren
@@ -89,8 +71,13 @@ fi
 cp -r "$PROJECT_DIR/dist" "$APP_BUNDLE/Contents/Resources/app/"
 cp "$PROJECT_DIR/server.py" "$APP_BUNDLE/Contents/Resources/app/"
 
+# Bundle ad-hoc signieren
+xattr -cr "$APP_BUNDLE" 2>/dev/null || true
+codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || true
+
 # 3. macOS .dmg erstellen
 echo "💿 3. Erstelle macOS Disk Image (PDF_Tool_ForAll.dmg)..."
+hdiutil detach /Volumes/"PDF Tool ForAll" 2>/dev/null || true
 DMG_STAGING="/tmp/dmg_staging_pdftool_$$"
 rm -rf "$DMG_STAGING" "$PROJECT_DIR/PDF_Tool_ForAll.dmg"
 mkdir -p "$DMG_STAGING"

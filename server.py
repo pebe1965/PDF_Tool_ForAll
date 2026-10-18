@@ -138,15 +138,26 @@ def main():
     print("Drücke [Ctrl + C] im Terminal, um das Tool zu beenden.")
     print("=" * 60)
 
-    # Automatically open browser
+    # Automatically open browser if not --no-browser
+    if "--no-browser" not in sys.argv:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+    import signal
+    def _sigterm_handler(signum, frame):
+        server.server_close()
+        sys.exit(0)
+
     try:
-        webbrowser.open(url)
+        signal.signal(signal.SIGTERM, _sigterm_handler)
     except Exception:
         pass
 
     try:
         server.serve_forever()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         print("\n👋 PDF Tool ForAll beendet. Auf Wiedersehen!")
         server.server_close()
 
