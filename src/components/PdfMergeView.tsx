@@ -55,13 +55,23 @@ const PagePreviewModal: React.FC<PagePreviewModalProps> = ({
   onMovePage,
   onDeletePage,
 }) => {
-  const [zoom, setZoom] = useState<number>(1.2);
+  const [zoomMode, setZoomMode] = useState<'fit' | number>('fit');
+  const [currentScale, setCurrentScale] = useState<number>(1.0);
+  const [isPageTaller, setIsPageTaller] = useState<boolean>(false);
   const [rendering, setRendering] = useState<boolean>(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const renderTaskRef = useRef<any>(null);
   const docCacheRef = useRef<Map<string, any>>(new Map());
 
   const currentPage = pages[currentIndex];
+
+  // Scroll to top whenever page changes
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [currentIndex]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -86,21 +96,27 @@ const PagePreviewModal: React.FC<PagePreviewModalProps> = ({
         onRotatePage(currentIndex);
       } else if (e.key === '+' || e.key === '=') {
         e.preventDefault();
-        setZoom((z) => Math.min(3.0, +(z + 0.2).toFixed(1)));
+        setZoomMode((prev) => {
+          const base = prev === 'fit' ? currentScale : prev;
+          return Math.min(3.0, +(base + 0.2).toFixed(1));
+        });
       } else if (e.key === '-' || e.key === '_') {
         e.preventDefault();
-        setZoom((z) => Math.max(0.6, +(z - 0.2).toFixed(1)));
+        setZoomMode((prev) => {
+          const base = prev === 'fit' ? currentScale : prev;
+          return Math.max(0.4, +(base - 0.2).toFixed(1));
+        });
       } else if (e.key === '0') {
         e.preventDefault();
-        setZoom(1.2);
+        setZoomMode('fit');
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, currentIndex, pages.length, onClose, onSelectIndex, onRotatePage]);
+  }, [isOpen, currentIndex, pages.length, onClose, onSelectIndex, onRotatePage, currentScale]);
 
-  // High-res PDF.js canvas rendering
+  // High-res PDF.js canvas rendering with adaptive viewport fit
   useEffect(() => {
     if (!isOpen || !currentPage) return;
 
@@ -131,9 +147,25 @@ const PagePreviewModal: React.FC<PagePreviewModalProps> = ({
         if (isCancelled) return;
 
         const dpr = window.devicePixelRatio || 1;
-        const effectiveScale = 1.35 * zoom;
+
+        // Calculate fit scale if zoomMode is 'fit'
+        let scale = 1.0;
+        if (zoomMode === 'fit') {
+          const vpUnscaled = page.getViewport({ scale: 1.0, rotation: currentPage.rotation });
+          const container = scrollContainerRef.current;
+          const availH = (container?.clientHeight || 650) - 48;
+          const availW = (container?.clientWidth || 900) - 48;
+          const scaleH = availH / vpUnscaled.height;
+          const scaleW = availW / vpUnscaled.width;
+          scale = Math.max(0.4, Math.min(scaleH, scaleW, 1.4));
+        } else {
+          scale = zoomMode;
+        }
+
+        setCurrentScale(scale);
+
         const viewport = page.getViewport({
-          scale: effectiveScale * dpr,
+          scale: scale * dpr,
           rotation: currentPage.rotation,
         });
 
@@ -142,8 +174,14 @@ const PagePreviewModal: React.FC<PagePreviewModalProps> = ({
 
         canvas.width = viewport.width;
         canvas.height = viewport.height;
-        canvas.style.width = `${Math.round(viewport.width / dpr)}px`;
-        canvas.style.height = `${Math.round(viewport.height / dpr)}px`;
+        const displayW = Math.round(viewport.width / dpr);
+        const displayH = Math.round(viewport.height / dpr);
+        canvas.style.width = `${displayW}px`;
+        canvas.style.height = `${displayH}px`;
+
+        const container = scrollContainerRef.current;
+        const containerH = container?.clientHeight || 650;
+        setIsPageTaller(displayH > containerH - 32);
 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
@@ -176,7 +214,7 @@ const PagePreviewModal: React.FC<PagePreviewModalProps> = ({
         renderTaskRef.current = null;
       }
     };
-  }, [isOpen, currentPage?.id, currentPage?.rotation, currentPage?.pageIndex, zoom]);
+  }, [isOpen, currentPage?.id, currentPage?.rotation, currentPage?.pageIndex, zoomMode]);
 
   if (!isOpen || !currentPage) return null;
 
@@ -229,24 +267,40 @@ const PagePreviewModal: React.FC<PagePreviewModalProps> = ({
             {/* Zoom Controls */}
             <div className="flex items-center bg-white/10 rounded-xl px-1.5 py-1 text-xs">
               <button
-                onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.2).toFixed(1)))}
-                disabled={zoom <= 0.6}
-                className="p-1 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white disabled:opacity-30 transition"
+                onClick={() =>
+                  setZoomMode((prev) => {
+                    const base = prev === 'fit' ? currentScale : prev;
+                    return Math.max(0.4, +(base - 0.2).toFixed(1));
+                  })
+                }
+                disabled={currentScale <= 0.4}
+                className="p-1 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white disabled:opacity-30 transition cursor-pointer"
                 title="Verkleinern (-)"
               >
                 <ZoomOut size={14} />
               </button>
               <button
-                onClick={() => setZoom(1.2)}
-                className="px-1.5 text-[11px] font-mono text-gray-300 hover:text-white transition"
-                title="Auf Standardgröße zurücksetzen (0)"
+                onClick={() => {
+                  if (zoomMode === 'fit') {
+                    setZoomMode(1.0);
+                  } else {
+                    setZoomMode('fit');
+                  }
+                }}
+                className="px-2 py-0.5 text-[11px] font-mono text-gray-300 hover:text-white hover:bg-white/10 rounded transition cursor-pointer"
+                title={zoomMode === 'fit' ? "Auf 100% (Originalgröße) umschalten" : "Auf Fenster anpassen (Ganze Seite)"}
               >
-                {Math.round((zoom / 1.2) * 100)}%
+                {zoomMode === 'fit' ? 'Ganze Seite' : `${Math.round(currentScale * 100)}%`}
               </button>
               <button
-                onClick={() => setZoom((z) => Math.min(3.0, +(z + 0.2).toFixed(1)))}
-                disabled={zoom >= 3.0}
-                className="p-1 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white disabled:opacity-30 transition"
+                onClick={() =>
+                  setZoomMode((prev) => {
+                    const base = prev === 'fit' ? currentScale : prev;
+                    return Math.min(3.0, +(base + 0.2).toFixed(1));
+                  })
+                }
+                disabled={currentScale >= 3.0}
+                className="p-1 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white disabled:opacity-30 transition cursor-pointer"
                 title="Vergrößern (+)"
               >
                 <ZoomIn size={14} />
@@ -256,7 +310,7 @@ const PagePreviewModal: React.FC<PagePreviewModalProps> = ({
             {/* Rotate */}
             <button
               onClick={() => onRotatePage(currentIndex)}
-              className="flex items-center gap-1 px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-xs font-medium rounded-xl text-gray-200 hover:text-white transition"
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-xs font-medium rounded-xl text-gray-200 hover:text-white transition cursor-pointer"
               title="Um 90° drehen (R)"
             >
               <RotateCw size={13} />
@@ -267,7 +321,7 @@ const PagePreviewModal: React.FC<PagePreviewModalProps> = ({
             <button
               onClick={() => handleMove('left')}
               disabled={currentIndex === 0}
-              className="p-1.5 bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white rounded-xl disabled:opacity-20 transition"
+              className="p-1.5 bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white rounded-xl disabled:opacity-20 transition cursor-pointer"
               title="Nach links schieben"
             >
               <ArrowLeft size={14} />
@@ -277,7 +331,7 @@ const PagePreviewModal: React.FC<PagePreviewModalProps> = ({
             <button
               onClick={() => handleMove('right')}
               disabled={currentIndex === pages.length - 1}
-              className="p-1.5 bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white rounded-xl disabled:opacity-20 transition"
+              className="p-1.5 bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white rounded-xl disabled:opacity-20 transition cursor-pointer"
               title="Nach rechts schieben"
             >
               <ArrowRight size={14} />
@@ -286,7 +340,7 @@ const PagePreviewModal: React.FC<PagePreviewModalProps> = ({
             {/* Delete */}
             <button
               onClick={handleDelete}
-              className="p-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 hover:text-red-200 rounded-xl transition"
+              className="p-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 hover:text-red-200 rounded-xl transition cursor-pointer"
               title="Diese Seite entfernen"
             >
               <Trash2 size={14} />
@@ -304,40 +358,51 @@ const PagePreviewModal: React.FC<PagePreviewModalProps> = ({
         </div>
 
         {/* Body: Canvas & Navigation Chevrons */}
-        <div className="flex-1 overflow-auto bg-[#18181A] p-6 flex items-center justify-center relative select-none">
+        <div className="flex-1 relative overflow-hidden bg-[#18181A] flex flex-col">
           {/* Left Chevron */}
           {currentIndex > 0 && (
             <button
               onClick={() => onSelectIndex(currentIndex - 1)}
-              className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-black/60 hover:bg-[#0071E3] text-white flex items-center justify-center shadow-xl backdrop-blur-md transition-all hover:scale-110 cursor-pointer"
+              className="absolute left-4 top-1/2 -translate-y-1/2 z-30 w-11 h-11 rounded-full bg-black/70 hover:bg-[#0071E3] text-white flex items-center justify-center shadow-2xl backdrop-blur-md transition-all hover:scale-110 cursor-pointer border border-white/15"
               title="Vorherige Seite (Pfeil links)"
             >
               <ChevronLeft size={24} />
             </button>
           )}
 
-          {/* Page Canvas Container with Shadow */}
-          <div className="relative max-w-full max-h-full flex items-center justify-center">
-            {rendering && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px] z-10 rounded-sm">
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-black/75 rounded-full text-xs text-white shadow-lg">
-                  <Loader2 size={14} className="animate-spin text-[#0071E3]" />
-                  <span>Wird gerendert...</span>
-                </div>
-              </div>
-            )}
+          {/* Scrollable Viewport */}
+          <div
+            ref={scrollContainerRef}
+            className="flex-1 overflow-auto p-4 sm:p-6 select-none"
+          >
+            <div
+              className={`min-w-full flex flex-col items-center ${
+                isPageTaller ? 'justify-start' : 'min-h-full justify-center'
+              }`}
+            >
+              <div className="relative max-w-full flex items-center justify-center">
+                {rendering && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px] z-10 rounded-sm">
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-black/75 rounded-full text-xs text-white shadow-lg">
+                      <Loader2 size={14} className="animate-spin text-[#0071E3]" />
+                      <span>Wird gerendert...</span>
+                    </div>
+                  </div>
+                )}
 
-            <canvas
-              ref={canvasRef}
-              className="bg-white shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-sm block max-w-full"
-            />
+                <canvas
+                  ref={canvasRef}
+                  className="bg-white shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-sm block"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Right Chevron */}
           {currentIndex < pages.length - 1 && (
             <button
               onClick={() => onSelectIndex(currentIndex + 1)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-black/60 hover:bg-[#0071E3] text-white flex items-center justify-center shadow-xl backdrop-blur-md transition-all hover:scale-110 cursor-pointer"
+              className="absolute right-4 top-1/2 -translate-y-1/2 z-30 w-11 h-11 rounded-full bg-black/70 hover:bg-[#0071E3] text-white flex items-center justify-center shadow-2xl backdrop-blur-md transition-all hover:scale-110 cursor-pointer border border-white/15"
               title="Nächste Seite (Pfeil rechts)"
             >
               <ChevronRight size={24} />
@@ -359,6 +424,9 @@ const PagePreviewModal: React.FC<PagePreviewModalProps> = ({
             <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-gray-300">+</span>
             <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-gray-300">-</span>
             <span>Zoom</span>
+            <span className="text-gray-600">•</span>
+            <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-gray-300">0</span>
+            <span>Ganze Seite</span>
             <span className="text-gray-600">•</span>
             <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-gray-300">Esc</span>
             <span>Schließen</span>
