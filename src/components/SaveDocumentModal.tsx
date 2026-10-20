@@ -8,6 +8,7 @@ import {
   FileText,
   Layers,
   Loader2,
+  Printer,
 } from 'lucide-react';
 
 interface SaveDocumentModalProps {
@@ -21,6 +22,7 @@ interface SaveDocumentModalProps {
   onSaveFinalPdf: (finalTitle: string, useFilePicker: boolean) => Promise<void>;
   onSaveEditableProject: (finalTitle: string, useFilePicker: boolean) => Promise<void>;
   onSaveDraftOnly: (finalTitle: string) => Promise<void>;
+  onPrint?: () => void;
 }
 
 export const SaveDocumentModal: React.FC<SaveDocumentModalProps> = ({
@@ -34,6 +36,7 @@ export const SaveDocumentModal: React.FC<SaveDocumentModalProps> = ({
   onSaveFinalPdf,
   onSaveEditableProject,
   onSaveDraftOnly,
+  onPrint,
 }) => {
   const [titleInput, setTitleInput] = useState(documentTitle);
   const [draftSavedSuccess, setDraftSavedSuccess] = useState(false);
@@ -236,6 +239,32 @@ export const SaveDocumentModal: React.FC<SaveDocumentModalProps> = ({
                 </div>
               </div>
             </button>
+
+            {/* Option 3: Print Document Directly */}
+            {onPrint && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onPrint();
+                }}
+                className="w-full p-3.5 rounded-2xl bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-900 flex items-center justify-between transition text-left group cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gray-200/80 text-gray-700 flex items-center justify-center shrink-0">
+                    <Printer size={20} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-gray-900">
+                      Dokument direkt drucken (Cmd+P / Strg+P)
+                    </div>
+                    <div className="text-[11px] text-gray-500 mt-0.5">
+                      Öffnet sofort den Druckdialog für dieses PDF mit allen aktuellen Änderungen
+                    </div>
+                  </div>
+                </div>
+              </button>
+            )}
 
             {/* Option 3: Save in internal Workspace Draft only */}
             <button

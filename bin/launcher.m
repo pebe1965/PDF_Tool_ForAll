@@ -1,10 +1,11 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
+#import <PDFKit/PDFKit.h>
 #import <sys/socket.h>
 #import <netinet/in.h>
 #import <arpa/inet.h>
 
-@interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate>
+@interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandler>
 @property (strong, nonatomic) NSWindow *window;
 @property (strong, nonatomic) WKWebView *webView;
 @property (strong, nonatomic) NSTask *backendTask;
@@ -184,6 +185,7 @@ static NSString *findPythonExecutable(NSString *appDir) {
     self.window.delegate = self;
     
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+    [config.userContentController addScriptMessageHandler:self name:@"printPdf"];
     self.webView = [[WKWebView alloc] initWithFrame:self.window.contentView.bounds configuration:config];
     self.webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.webView.navigationDelegate = self;
@@ -343,6 +345,38 @@ static NSString *findPythonExecutable(NSString *appDir) {
     }
 }
 
+// WKScriptMessageHandler für native PDFKit-Druckfunktion aus dem Frontend
+- (void)userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message {
+    if ([message.name isEqualToString:@"printPdf"]) {
+        NSString *base64Str = message.body;
+        if ([base64Str isKindOfClass:[NSString class]] && base64Str.length > 0) {
+            NSData *pdfData = [[NSData alloc] initWithBase64EncodedString:base64Str options:NSDataBase64DecodingIgnoreUnknownCharacters];
+            if (pdfData && pdfData.length > 0) {
+                PDFDocument *pdfDoc = [[PDFDocument alloc] initWithData:pdfData];
+                if (pdfDoc) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        NSPrintInfo *printInfo = [NSPrintInfo sharedPrintInfo];
+                        [printInfo setHorizontalPagination:NSPrintingPaginationModeFit];
+                        [printInfo setVerticalPagination:NSPrintingPaginationModeAutomatic];
+                        NSPrintOperation *printOp = [pdfDoc printOperationForPrintInfo:printInfo scalingMode:kPDFPrintPageScaleToFit autoRotate:YES];
+                        [printOp setShowsPrintPanel:YES];
+                        [printOp setShowsProgressPanel:YES];
+                        if (self.window) {
+                            [printOp runOperationModalForWindow:self.window delegate:nil didRunSelector:nil contextInfo:nil];
+                        } else {
+                            [printOp runOperation];
+                        }
+                    });
+                }
+            }
+        }
+    }
+}
+
+- (void)printMenuAction:(id)sender {
+    [self.webView evaluateJavaScript:@"window.dispatchEvent(new CustomEvent('app-request-print'))" completionHandler:nil];
+}
+
 - (void)setupMenus {
     NSMenu *mainMenu = [[NSMenu alloc] init];
     
@@ -361,7 +395,16 @@ static NSString *findPythonExecutable(NSString *appDir) {
     [appMenu addItem:[NSMenuItem separatorItem]];
     [appMenu addItemWithTitle:@"PDF Tool ForAll beenden" action:@selector(terminate:) keyEquivalent:@"q"];
     
-    // 2. Bearbeiten (Edit) Menu
+    // 2. Ablage (File) Menu
+    NSMenuItem *fileMenuItem = [[NSMenuItem alloc] init];
+    [mainMenu addItem:fileMenuItem];
+    NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"Ablage"];
+    [fileMenuItem setSubmenu:fileMenu];
+    
+    NSMenuItem *printItem = [fileMenu addItemWithTitle:@"Drucken…" action:@selector(printMenuAction:) keyEquivalent:@"p"];
+    printItem.target = self;
+    
+    // 3. Bearbeiten (Edit) Menu
     NSMenuItem *editMenuItem = [[NSMenuItem alloc] init];
     [mainMenu addItem:editMenuItem];
     NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Bearbeiten"];

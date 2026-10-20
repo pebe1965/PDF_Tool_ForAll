@@ -45,9 +45,9 @@ cat << 'EOF' > "$APP_BUNDLE/Contents/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.7.0</string>
+    <string>1.8.0</string>
     <key>CFBundleVersion</key>
-    <string>1.7.0</string>
+    <string>1.8.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>NSHighResolutionCapable</key>
@@ -56,9 +56,9 @@ cat << 'EOF' > "$APP_BUNDLE/Contents/Info.plist"
 </plist>
 EOF
 
-# Nativer App-Launcher (Cocoa + WebKit Universal 2) kompilieren
-echo "🔨 Kompiliere nativen App-Launcher (Cocoa + WebKit Universal 2)..."
-clang -fobjc-arc -framework Cocoa -framework WebKit -mmacosx-version-min=12.0 -arch arm64 -arch x86_64 -O2 \
+# Nativer App-Launcher (Cocoa + WebKit + PDFKit Universal 2) kompilieren
+echo "🔨 Kompiliere nativen App-Launcher (Cocoa + WebKit + PDFKit Universal 2)..."
+clang -fobjc-arc -framework Cocoa -framework WebKit -framework PDFKit -mmacosx-version-min=12.0 -arch arm64 -arch x86_64 -O2 \
     "$PROJECT_DIR/bin/launcher.m" -o "$APP_BUNDLE/Contents/MacOS/launcher"
 chmod +x "$APP_BUNDLE/Contents/MacOS/launcher"
 

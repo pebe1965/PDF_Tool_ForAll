@@ -770,6 +770,119 @@ export async function downloadPdf(
 }
 
 /**
+ * Prints a PDF document across environments:
+ * 1. macOS Native App (WebKit/Cocoa via window.webkit.messageHandlers.printPdf with PDFKit)
+ * 2. Modern desktop and mobile browsers (Chrome, Edge, Firefox, Safari) using an invisible iframe or blob window
+ */
+export async function printPdf(bytes: Uint8Array | ArrayBuffer): Promise<boolean> {
+  const uint8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+
+  // 1. Check if running inside the native macOS App with WKScriptMessageHandler
+  try {
+    const webkit = (window as any).webkit;
+    if (webkit?.messageHandlers?.printPdf) {
+      let binary = '';
+      const len = uint8.byteLength;
+      const chunkSize = 0x8000;
+      for (let i = 0; i < len; i += chunkSize) {
+        binary += String.fromCharCode.apply(
+          null,
+          Array.from(uint8.subarray(i, Math.min(i + chunkSize, len))) as any
+        );
+      }
+      const base64 = btoa(binary);
+      webkit.messageHandlers.printPdf.postMessage(base64);
+      return true;
+    }
+  } catch (err) {
+    console.warn('Native macOS print handler failed, falling back to browser print:', err);
+  }
+
+  // 2. Web browser: Create Blob URL and trigger print dialog
+  const blob = new Blob([uint8 as any], { type: 'application/pdf' });
+  const blobUrl = URL.createObjectURL(blob);
+
+  return new Promise<boolean>((resolve) => {
+    let resolved = false;
+    const safeResolve = (success: boolean) => {
+      if (!resolved) {
+        resolved = true;
+        resolve(success);
+      }
+    };
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.style.opacity = '0';
+    iframe.style.pointerEvents = 'none';
+    iframe.src = blobUrl;
+
+    const cleanup = () => {
+      setTimeout(() => {
+        try {
+          if (iframe.parentNode) {
+            document.body.removeChild(iframe);
+          }
+          URL.revokeObjectURL(blobUrl);
+        } catch (_) {}
+      }, 60000);
+    };
+
+    iframe.onload = () => {
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+          safeResolve(true);
+          cleanup();
+        } catch (e) {
+          console.warn('iframe.print failed, trying window.open fallback:', e);
+          try {
+            const printWin = window.open(blobUrl, '_blank');
+            if (printWin) {
+              printWin.focus();
+              safeResolve(true);
+            } else {
+              safeResolve(false);
+            }
+          } catch (_) {
+            safeResolve(false);
+          }
+          cleanup();
+        }
+      }, 300);
+    };
+
+    iframe.onerror = () => {
+      try {
+        const printWin = window.open(blobUrl, '_blank');
+        if (printWin) {
+          printWin.focus();
+          safeResolve(true);
+        } else {
+          safeResolve(false);
+        }
+      } catch (_) {
+        safeResolve(false);
+      }
+      cleanup();
+    };
+
+    document.body.appendChild(iframe);
+
+    // Safety timeout in case onload doesn't fire for certain PDF viewer plugins
+    setTimeout(() => {
+      safeResolve(true);
+    }, 4000);
+  });
+}
+
+/**
  * Creates a brand new 1-page blank A4 PDF document
  */
 export async function createBlankPdfDocument(): Promise<Uint8Array> {

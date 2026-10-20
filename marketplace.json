@@ -1,7 +1,7 @@
 {
   "slug": "pdf-tool-forall",
   "github_repo": "pebe1965/PDF_Tool_ForAll",
-  "description": "Lokale PDF-Suite für Büro und Alltag: bearbeiten, schreiben, unterschreiben, stempeln, schwärzen, Formulare ausfüllen, zusammenführen, teilen und komprimieren – ohne Upload in eine Cloud. Läuft auch auf dem iPad im selben WLAN.",
+  "description": "Lokale PDF-Suite für Büro und Alltag: bearbeiten, schreiben, unterschreiben, drucken, stempeln, schwärzen, Formulare ausfüllen, zusammenführen, teilen und komprimieren – ohne Upload in eine Cloud. Läuft auch auf dem iPad im selben WLAN.",
   "integrations": [
     {
       "module": "Bearbeiten & Signieren",
@@ -24,8 +24,8 @@
       "description": "PDF teilen und komprimieren, E-Rechnungen (ZUGFeRD/XRechnung) auslesen und nach Excel exportieren, Dokumente vergleichen, PDF in Bilder umwandeln."
     },
     {
-      "module": "Speichern & Updates",
-      "description": "Automatische Zwischenspeicherung, Speichern-Dialog mit Ordnerwahl, Dokument-Wechsel und Startseiten-Übersicht, wiederbearbeitbare Projektdateien und Update mit einem Klick."
+      "module": "Speichern, Drucken & Updates",
+      "description": "Dokumente direkt drucken mit Tastaturkürzel Cmd+P, automatische Zwischenspeicherung, Speichern-Dialog mit Ordnerwahl, Projektdateien und 1-Klick-Updates."
     },
     {
       "module": "KI über dein Konto",

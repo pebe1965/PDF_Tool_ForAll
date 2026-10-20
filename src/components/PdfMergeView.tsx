@@ -18,12 +18,14 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  Printer,
 } from 'lucide-react';
 import { pdfjsLib } from '../lib/pdfWorker';
 import { MergePageItem } from '../types/pdf';
 import {
   mergeAndExportPages,
   downloadPdf,
+  printPdf,
   convertImageFileToA4PdfBytes,
 } from '../lib/pdfEngine';
 
@@ -453,6 +455,7 @@ export const PdfMergeView: React.FC<PdfMergeViewProps> = ({
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
   const [outputFileName, setOutputFileName] = useState<string>('Zusammengefuehrtes_Dokument');
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const lastLoadedSharedBufferRef = useRef<ArrayBuffer | null>(null);
@@ -676,6 +679,21 @@ export const PdfMergeView: React.FC<PdfMergeViewProps> = ({
     }
   };
 
+  const handlePrintMerge = async () => {
+    if (pages.length === 0) return;
+    setIsPrinting(true);
+
+    try {
+      const mergedBytes = await mergeAndExportPages(pages);
+      await printPdf(mergedBytes);
+    } catch (err) {
+      console.error('Merge print error:', err);
+      alert('Fehler beim Drucken der zusammengeführten PDF.');
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
   };
@@ -814,6 +832,16 @@ export const PdfMergeView: React.FC<PdfMergeViewProps> = ({
             {exporting ? <Loader2 size={15} className="animate-spin" /> : <Edit3 size={15} />}
             <span className="hidden sm:inline">Im Editor öffnen</span>
             <span className="sm:hidden">Editor</span>
+          </button>
+
+          <button
+            onClick={handlePrintMerge}
+            disabled={pages.length === 0 || exporting || isPrinting}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#F5F5F7] hover:bg-gray-200 text-gray-800 rounded-xl text-xs font-semibold border border-gray-200/80 transition disabled:opacity-50 cursor-pointer"
+            title="Zusammengeführte Seiten drucken"
+          >
+            {isPrinting ? <Loader2 size={15} className="animate-spin" /> : <Printer size={15} />}
+            <span>Drucken</span>
           </button>
 
           <button

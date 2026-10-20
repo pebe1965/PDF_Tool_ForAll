@@ -44,6 +44,7 @@ import {
   CheckCircle2,
   Home,
   ArrowLeft,
+  Printer,
 } from 'lucide-react';
 import { pdfjsLib } from '../lib/pdfWorker';
 import { AnnotationLayer } from './AnnotationLayer';
@@ -69,6 +70,7 @@ import {
 import {
   applyAnnotationsToPdf,
   downloadPdf,
+  printPdf,
   createBlankPdfDocument,
   addBlankPageToPdf,
   addMultipleBlankPagesToPdf,
@@ -128,6 +130,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   const [scale, setScale] = useState<number>(1.2);
   const [loading, setLoading] = useState<boolean>(false);
   const [exporting, setExporting] = useState<boolean>(false);
+  const [isPrinting, setIsPrinting] = useState<boolean>(false);
   const [documentTitle, setDocumentTitle] = useState<string>('Dokument_bearbeitet');
   const lastSyncRef = useRef<ArrayBuffer | null>(null);
 
@@ -324,6 +327,12 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && pdfBytes) {
         e.preventDefault();
         setIsSaveModalOpen(true);
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p' && pdfBytes) {
+        e.preventDefault();
+        handlePrint();
         return;
       }
 
@@ -1256,6 +1265,32 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     }
   };
 
+  // Print current PDF with all annotations applied (supports native Mac app and browsers)
+  const handlePrint = async () => {
+    if (!pdfBytes) return;
+    setIsPrinting(true);
+    try {
+      const modifiedBytes = await applyAnnotationsToPdf(pdfBytes, annotations);
+      await printPdf(modifiedBytes);
+    } catch (err: any) {
+      console.error('Print error:', err);
+      alert(`Fehler beim Drucken der PDF: ${err?.message || err}`);
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
+  // Listen to native Mac Menu "Drucken…" (Cmd+P) dispatched from launcher.m
+  useEffect(() => {
+    const handleAppRequestPrint = () => {
+      if (pdfBytes) {
+        handlePrint();
+      }
+    };
+    window.addEventListener('app-request-print', handleAppRequestPrint);
+    return () => window.removeEventListener('app-request-print', handleAppRequestPrint);
+  }, [pdfBytes, annotations]);
+
   // Save editable .pdftool project file
   const handleExportProject = async (customTitle?: string, useFilePicker: boolean = false) => {
     if (!pdfBytes) return;
@@ -1903,6 +1938,16 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
               </button>
 
               <button
+                onClick={handlePrint}
+                disabled={isPrinting || exporting}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F5F5F7] hover:bg-gray-200 text-gray-800 rounded-xl text-xs font-semibold border border-gray-200/80 transition disabled:opacity-50 cursor-pointer"
+                title="Dokument drucken (Cmd+P / Strg+P)"
+              >
+                {isPrinting ? <Loader2 size={15} className="animate-spin" /> : <Printer size={15} />}
+                <span>Drucken</span>
+              </button>
+
+              <button
                 onClick={() => setIsSaveModalOpen(true)}
                 disabled={exporting}
                 className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#0071E3] hover:bg-[#0077ED] text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-60"
@@ -2303,6 +2348,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         onSaveFinalPdf={handleExport}
         onSaveEditableProject={handleExportProject}
         onSaveDraftOnly={handleSaveDraftOnly}
+        onPrint={handlePrint}
       />
 
       {/* Gemini AI Assistant Modal / Slide-Over */}
