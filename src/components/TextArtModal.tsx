@@ -18,6 +18,7 @@ import {
   getFontFamilyCss,
   buildTextArtSvgMarkup,
   calculateFitToWidthFontSize,
+  getTextArtDimensions,
 } from '../lib/textArtHelper';
 
 interface TextArtModalProps {
@@ -197,16 +198,19 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-    const lineCount = Math.max(1, lines.length);
+    const dims = getTextArtDimensions(currentPreviewArt, fontSize);
+    const aspect = dims.viewBoxW / Math.max(1, dims.viewBoxH);
+    // Page is roughly A4 (width/height ~ 0.707)
+    // Desired width on page: between 0.45 and 0.85 depending on font size
     const autoWidth =
       curveType === 'circle'
         ? 0.48
-        : Math.min(0.85, Math.max(0.48, 0.45 + (fontSize / 200) * 0.28));
+        : Math.min(0.85, Math.max(0.40, 0.45 + (fontSize / 200) * 0.35));
+    // Proportional height matching the text's actual aspect ratio so there is no empty space!
     const autoHeight =
       curveType === 'circle'
         ? 0.40
-        : Math.min(0.55, 0.16 + (lineCount - 1) * 0.12 + (fontSize / 200) * 0.12);
+        : Math.min(0.65, Math.max(0.06, (autoWidth * 0.707) / aspect));
 
     onInsert({
       type: 'textart',

@@ -224,8 +224,66 @@ export function calculateFitToWidthFontSize(
 }
 
 /**
- * Generates an SVG path definition based on curveType and bend (-100 to +100)
- * Bounding coordinate space is 800 x 320 with true circular curvature so short words bend visibly
+ * Calculates exact coordinate bounding box for the entire TextArt object
+ * so that no characters or ascenders/descenders are ever clipped or lost.
+ */
+export function getTextArtDimensions(
+  art: TextArtAnnotation,
+  effectiveSize: number
+): { viewBoxX: number; viewBoxY: number; viewBoxW: number; viewBoxH: number } {
+  const rawText = art.text ?? 'TextArt';
+  const rawLines = rawText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  const lines = rawLines.length > 0 ? rawLines : ['TextArt'];
+
+  const factor = FONT_WIDTH_FACTORS[art.fontFamily] || 0.75;
+  const letterSpacing = art.letterSpacing || 0;
+
+  let maxLineWidth = 0;
+  for (const line of lines) {
+    const chars = Math.max(1, line.length);
+    const w = chars * effectiveSize * factor + (chars - 1) * letterSpacing;
+    if (w > maxLineWidth) maxLineWidth = w;
+  }
+
+  const totalLines = Math.max(1, lines.length);
+  const lineHeight = effectiveSize * 1.18;
+  const textBlockHeight = (totalLines - 1) * lineHeight + effectiveSize * 1.1;
+
+  let curveExtraTop = 0;
+  let curveExtraBottom = 0;
+  const bendIntensity = Math.abs(art.bend ?? 40) / 100;
+
+  if (art.curveType === 'arc-up') {
+    curveExtraTop = bendIntensity * (effectiveSize * 0.9);
+  } else if (art.curveType === 'arc-down') {
+    curveExtraBottom = bendIntensity * (effectiveSize * 0.9);
+  } else if (art.curveType === 'wave') {
+    curveExtraTop = bendIntensity * (effectiveSize * 0.45);
+    curveExtraBottom = bendIntensity * (effectiveSize * 0.45);
+  } else if (art.curveType === 'circle') {
+    curveExtraTop = effectiveSize * 0.5;
+    curveExtraBottom = effectiveSize * 0.5;
+  }
+
+  const strokeW = art.strokeWidth || 0;
+  const padX = effectiveSize * 0.12 + strokeW * 2 + 18;
+  const padY = effectiveSize * 0.12 + strokeW * 2 + 18;
+
+  const minX = -(maxLineWidth / 2) - padX;
+  const maxX = +(maxLineWidth / 2) + padX;
+  const minY = -(textBlockHeight / 2) - curveExtraTop - padY;
+  const maxY = +(textBlockHeight / 2) + curveExtraBottom + padY;
+
+  const viewBoxX = Math.round(minX);
+  const viewBoxY = Math.round(minY);
+  const viewBoxW = Math.max(100, Math.round(maxX - minX));
+  const viewBoxH = Math.max(60, Math.round(maxY - minY));
+
+  return { viewBoxX, viewBoxY, viewBoxW, viewBoxH };
+}
+
+/**
+ * Generates an SVG path definition centered at (0, lineY) based on curveType and bend (-100 to +100)
  */
 export function getSvgPathD(
   curveType: TextArtAnnotation['curveType'],
@@ -236,18 +294,16 @@ export function getSvgPathD(
 ): string {
   const normBend = Math.max(5, Math.min(100, Math.abs(bend)));
   const intensity = normBend / 100;
-  const lineSpacing = fontSize * 1.15;
-  const lineOffset = (lineIndex - (totalLines - 1) / 2) * lineSpacing;
+  const lineSpacing = fontSize * 1.18;
+  const lineY = (lineIndex - (totalLines - 1) / 2) * lineSpacing;
 
   switch (curveType) {
     case 'arc-up': {
-      // True circular/elliptical arch that visibly curls letters at any word length
-      const R = Math.max(120, 420 - intensity * 290) + lineOffset;
+      const R = Math.max(120, 420 - intensity * 290);
       const arcAngleRad = (Math.PI / 180) * (20 + intensity * 130);
-      const cx = 400;
-      const cy = 160 + R * Math.cos(arcAngleRad / 2) - lineOffset;
+      const cx = 0;
+      const cy = lineY + R;
 
-      // Span at least 240 degrees so long text never falls off the path ends
       const halfSpan = Math.max(arcAngleRad / 2, Math.PI * 0.68);
       const startAngle = -Math.PI / 2 - halfSpan;
       const endAngle = -Math.PI / 2 + halfSpan;
@@ -260,13 +316,11 @@ export function getSvgPathD(
       return `M ${x1.toFixed(1)},${y1.toFixed(1)} A ${R.toFixed(1)},${R.toFixed(1)} 0 0,1 ${x2.toFixed(1)},${y2.toFixed(1)}`;
     }
     case 'arc-down': {
-      // True smiling downward arc
-      const R = Math.max(120, 420 - intensity * 290) - lineOffset;
+      const R = Math.max(120, 420 - intensity * 290);
       const arcAngleRad = (Math.PI / 180) * (20 + intensity * 130);
-      const cx = 400;
-      const cy = 160 - R * Math.cos(arcAngleRad / 2) + lineOffset;
+      const cx = 0;
+      const cy = lineY - R;
 
-      // Span at least 240 degrees so long text never falls off the path ends
       const halfSpan = Math.max(arcAngleRad / 2, Math.PI * 0.68);
       const startAngle = Math.PI / 2 - halfSpan;
       const endAngle = Math.PI / 2 + halfSpan;
@@ -279,23 +333,16 @@ export function getSvgPathD(
       return `M ${x1.toFixed(1)},${y1.toFixed(1)} A ${R.toFixed(1)},${R.toFixed(1)} 0 0,0 ${x2.toFixed(1)},${y2.toFixed(1)}`;
     }
     case 'circle': {
-      // Upper ring for seal / circular emblem
-      const R = Math.max(130, 240 - intensity * 80) + lineOffset;
-      const cx = 400;
-      const cy = 250;
-      return `M ${(cx - R).toFixed(1)},${cy} A ${R.toFixed(1)},${R.toFixed(1)} 0 0,1 ${(cx + R).toFixed(1)},${cy}`;
+      const R = Math.max(fontSize * 1.5, 200 - intensity * 60);
+      return `M ${-R},${lineY + R} A ${R},${R} 0 0,1 ${R},${lineY + R}`;
     }
     case 'wave': {
-      // Smooth sinusoidal wave centered at 400 with ample length so characters never clip
-      const waveH = intensity * 75;
-      const midY = 160 + lineOffset;
-      return `M -2000,${midY} Q -800,${midY - waveH} 400,${midY} T 2800,${midY}`;
+      const waveH = intensity * (fontSize * 0.5);
+      return `M -3000,${lineY} Q -1500,${lineY - waveH} 0,${lineY} T 3000,${lineY}`;
     }
     case 'flat':
     default: {
-      // Unbounded horizontal line centered at 400 so characters never fall off path bounds
-      const lineY = 160 + lineOffset;
-      return `M -4000,${lineY} L 4800,${lineY}`;
+      return `M -4000,${lineY} L 4000,${lineY}`;
     }
   }
 }
@@ -305,23 +352,21 @@ export function getSvgPathD(
  */
 export function buildTextArtSvgMarkup(
   art: TextArtAnnotation,
-  viewWidth = 800,
-  viewHeight = 320,
+  _targetWidth = 800,
+  _targetHeight = 320,
   uniqueId = `art_${Date.now()}`
 ): string {
-  // Support multi-line text (e.g. "NOTIONARY\nATLAS" or "NEW YORK\nCITY")
   const rawText = art.text ?? 'TextArt';
   const rawLines = rawText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
   const lines = rawLines.length > 0 ? rawLines : ['TextArt'];
 
-  const maxLineLen = Math.max(...lines.map((l) => l.length));
-  // Smart default font size if not set:
-  const baseSize = maxLineLen > 25 ? 28 : maxLineLen > 18 ? 36 : maxLineLen > 10 ? 48 : maxLineLen > 5 ? 64 : 84;
-  const effectiveSize = art.fontSize || (lines.length > 1 ? Math.min(baseSize, 56) : baseSize);
+  const effectiveSize = art.fontSize || 68;
   const fontFamilyCss = getFontFamilyCss(art.fontFamily);
   const strokeW = art.strokeWidth || 0;
   const strokeC = art.strokeColor || '#000000';
   const letterSpacing = art.letterSpacing || 0;
+
+  const { viewBoxX, viewBoxY, viewBoxW, viewBoxH } = getTextArtDimensions(art, effectiveSize);
 
   const gradId = `grad_${uniqueId}`;
   const patId = `pat_${uniqueId}`;
@@ -333,106 +378,129 @@ export function buildTextArtSvgMarkup(
     fillAttr = `url(#${patId})`;
   }
 
-  const estimatedW = getEstimatedTextWidth(rawText, art.fontFamily, effectiveSize, letterSpacing);
-  // Dynamic viewBox so all characters remain completely visible without clipping
-  const contentWidth = Math.max(viewWidth, Math.round(estimatedW + 80));
-  const viewBoxX = (viewWidth - contentWidth) / 2;
-  const viewBoxW = contentWidth;
-
   const gradientColors = GRADIENT_DEFS[art.gradientPreset || 'gold'] || GRADIENT_DEFS.gold;
 
   const imgScale = art.imageScale || 1.0;
-  const imgW = viewWidth * imgScale;
-  const imgH = viewHeight * imgScale;
-  const imgX = 400 - imgW / 2 + ((art.imageOffsetX || 0) / 100) * viewWidth;
-  const imgY = 160 - imgH / 2 + ((art.imageOffsetY || 0) / 100) * viewHeight;
+  const imgW = viewBoxW * imgScale;
+  const imgH = viewBoxH * imgScale;
+  const imgX = (viewBoxW - imgW) / 2 + ((art.imageOffsetX || 0) / 100) * viewBoxW;
+  const imgY = (viewBoxH - imgH) / 2 + ((art.imageOffsetY || 0) / 100) * viewBoxH;
 
-  // Build path defs for each line
-  const pathsDef = lines
-    .map((_, i) => {
-      const d = getSvgPathD(art.curveType, art.bend, i, lines.length, effectiveSize);
-      return `<path id="path_${uniqueId}_${i}" d="${d}" fill="none" />`;
-    })
-    .join('\n');
+  const lineHeight = effectiveSize * 1.18;
+  const isFlat = !art.curveType || art.curveType === 'flat';
 
-  // Build 3D Shadow Layers (for each line)
-  const shadowMarkup = art.has3dShadow
-    ? [5, 4, 3, 2, 1]
-        .map((step) =>
-          lines
-            .map(
-              (_, i) => `
-          <text
-            font-family='${fontFamilyCss}'
-            font-size="${effectiveSize}"
-            font-weight="900"
-            letter-spacing="${letterSpacing}px"
-            text-anchor="middle"
-            fill="${art.shadowColor || '#1D1D1F'}"
-            opacity="${0.18 + step * 0.12}"
-            dx="${step * 1.5}"
-            dy="${step * 1.5}"
-          >
-            <textPath href="#path_${uniqueId}_${i}" startOffset="50%">
-              ${escapeXml(lines[i])}
-            </textPath>
-          </text>
-        `
-            )
-            .join('')
-        )
-        .join('')
+  // Build path defs for curved lines
+  const pathsDef = !isFlat
+    ? lines
+        .map((_, i) => {
+          const d = getSvgPathD(art.curveType, art.bend, i, lines.length, effectiveSize);
+          return `<path id="path_${uniqueId}_${i}" d="${d}" fill="none" />`;
+        })
+        .join('\n')
     : '';
 
-  // Build stroke outlines (for each line)
-  const strokeMarkup =
-    strokeW > 0
-      ? lines
-          .map(
-            (_, i) => `
+  // Render a single line of text
+  const renderLine = (
+    lineIdx: number,
+    opts: {
+      fill?: string;
+      stroke?: string;
+      strokeWidth?: number;
+      opacity?: number;
+      transform?: string;
+    }
+  ) => {
+    const lineY = (lineIdx - (lines.length - 1) / 2) * lineHeight;
+    const textContent = escapeXml(lines[lineIdx]);
+    const transformAttr = opts.transform ? `transform="${opts.transform}"` : '';
+    const opacityAttr = opts.opacity !== undefined ? `opacity="${opts.opacity}"` : '';
+    const strokeAttr =
+      opts.stroke && opts.strokeWidth
+        ? `stroke="${opts.stroke}" stroke-width="${opts.strokeWidth}" stroke-linejoin="round" stroke-linecap="round"`
+        : '';
+    const fillValue = opts.fill || 'none';
+
+    if (isFlat) {
+      return `
+        <text
+          x="0"
+          y="${lineY.toFixed(1)}"
+          font-family='${fontFamilyCss}'
+          font-size="${effectiveSize}"
+          font-weight="900"
+          letter-spacing="${letterSpacing}px"
+          text-anchor="middle"
+          dominant-baseline="central"
+          fill="${fillValue}"
+          ${strokeAttr}
+          ${transformAttr}
+          ${opacityAttr}
+        >${textContent}</text>
+      `;
+    } else {
+      return `
         <text
           font-family='${fontFamilyCss}'
           font-size="${effectiveSize}"
           font-weight="900"
           letter-spacing="${letterSpacing}px"
           text-anchor="middle"
-          fill="none"
-          stroke="${strokeC}"
-          stroke-width="${strokeW * 2.5}"
-          stroke-linejoin="round"
-          stroke-linecap="round"
+          fill="${fillValue}"
+          ${strokeAttr}
+          ${transformAttr}
+          ${opacityAttr}
         >
-          <textPath href="#path_${uniqueId}_${i}" startOffset="50%">
-            ${escapeXml(lines[i])}
+          <textPath href="#path_${uniqueId}_${lineIdx}" startOffset="50%" text-anchor="middle">
+            ${textContent}
           </textPath>
         </text>
-      `
+      `;
+    }
+  };
+
+  // 3D Shadow Layers (5 extrusion steps translated by transform)
+  const shadowMarkup = art.has3dShadow
+    ? [5, 4, 3, 2, 1]
+        .map((step) =>
+          lines
+            .map((_, i) =>
+              renderLine(i, {
+                fill: art.shadowColor || '#1D1D1F',
+                opacity: 0.16 + step * 0.12,
+                transform: `translate(${step * 1.5}, ${step * 1.5})`,
+              })
+            )
+            .join('')
+        )
+        .join('')
+    : '';
+
+  // Stroke Outline
+  const strokeMarkup =
+    strokeW > 0
+      ? lines
+          .map((_, i) =>
+            renderLine(i, {
+              fill: 'none',
+              stroke: strokeC,
+              strokeWidth: strokeW * 2.5,
+            })
           )
           .join('')
       : '';
 
-  // Build main text lines (all filled with gradient or image pattern)
-  const mainTextMarkup = lines
-    .map(
-      (_, i) => `
-      <text
-        font-family='${fontFamilyCss}'
-        font-size="${effectiveSize}"
-        font-weight="900"
-        letter-spacing="${letterSpacing}px"
-        text-anchor="middle"
-        fill="${fillAttr}"
-      >
-        <textPath href="#path_${uniqueId}_${i}" startOffset="50%">
-          ${escapeXml(lines[i])}
-        </textPath>
-      </text>
-    `
-    )
-    .join('');
+  // Main Text
+  const mainTextMarkup = lines.map((_, i) => renderLine(i, { fill: fillAttr })).join('');
 
   return `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBoxX} 0 ${viewBoxW} ${viewHeight}" width="100%" height="100%" overflow="visible" style="overflow: visible;">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="${viewBoxX} ${viewBoxY} ${viewBoxW} ${viewBoxH}"
+      width="100%"
+      height="100%"
+      overflow="visible"
+      style="overflow: visible;"
+    >
       <defs>
         ${pathsDef}
         ${
@@ -449,8 +517,15 @@ export function buildTextArtSvgMarkup(
         ${
           art.fillMode === 'image' && art.imageDataUrl
             ? `
-          <pattern id="${patId}" patternUnits="userSpaceOnUse" x="${viewBoxX}" y="0" width="${viewBoxW}" height="${viewHeight}">
-            <image href="${art.imageDataUrl}" x="${imgX}" y="${imgY}" width="${imgW}" height="${imgH}" preserveAspectRatio="xMidYMid slice" />
+          <pattern id="${patId}" patternUnits="userSpaceOnUse" x="${viewBoxX}" y="${viewBoxY}" width="${viewBoxW}" height="${viewBoxH}">
+            <image
+              href="${art.imageDataUrl}"
+              x="${viewBoxX + imgX}"
+              y="${viewBoxY + imgY}"
+              width="${imgW}"
+              height="${imgH}"
+              preserveAspectRatio="xMidYMid slice"
+            />
           </pattern>
         `
             : ''

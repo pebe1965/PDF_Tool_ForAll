@@ -1440,11 +1440,23 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       let newH = ann.height;
 
       const resizeType = resizeBoxStartPos.type || 'corner';
-      if (resizeType === 'right' || resizeType === 'corner') {
+      if (ann.type === 'textart' && resizeType === 'corner') {
+        const initialAspect =
+          (resizeBoxStartPos.initialW * pageWidth) /
+          Math.max(1, resizeBoxStartPos.initialH * pageHeight);
         newW = Math.max(minW, Math.min(maxW, resizeBoxStartPos.initialW + deltaX));
-      }
-      if (resizeType === 'bottom' || resizeType === 'corner') {
-        newH = Math.max(minH, Math.min(maxH, resizeBoxStartPos.initialH + deltaY));
+        newH = (newW * (pageWidth / pageHeight)) / initialAspect;
+        if (newH > maxH) {
+          newH = maxH;
+          newW = Math.max(minW, Math.min(maxW, newH * (pageHeight / pageWidth) * initialAspect));
+        }
+      } else {
+        if (resizeType === 'right' || resizeType === 'corner') {
+          newW = Math.max(minW, Math.min(maxW, resizeBoxStartPos.initialW + deltaX));
+        }
+        if (resizeType === 'bottom' || resizeType === 'corner') {
+          newH = Math.max(minH, Math.min(maxH, resizeBoxStartPos.initialH + deltaY));
+        }
       }
 
       onUpdateAnnotation({
