@@ -511,10 +511,9 @@ export function buildTextArtSvgMarkup(
           .join('')
       : '';
 
-  // Base solid fill ensuring inner stroke is covered identically on all lines (never leaving double-thick exposed borders)
-  const baseFillColor = art.fillMode === 'image' ? (art.color || '#1D1D1F') : 'transparent';
+  // Base solid fill ensuring inner stroke is covered identically on all lines (never leaving double-thick exposed borders for image masks)
   const baseFillMarkup =
-    strokeW > 0 || art.fillMode === 'image'
+    art.fillMode === 'image'
       ? lines
           .map(
             (_, i) => `
@@ -524,7 +523,7 @@ export function buildTextArtSvgMarkup(
           font-weight="900"
           letter-spacing="${letterSpacing}px"
           text-anchor="middle"
-          fill="${baseFillColor}"
+          fill="${art.color || '#1D1D1F'}"
         >
           <textPath href="#path_${uniqueId}_${i}" startOffset="50%" text-anchor="middle">
             ${escapeXml(lines[i])}
@@ -571,7 +570,7 @@ export function buildTextArtSvgMarkup(
         ${
           art.fillMode === 'gradient'
             ? `
-          <linearGradient id="${gradId}" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient id="${gradId}" gradientUnits="userSpaceOnUse" x1="${bbox.minX}" y1="${bbox.minY}" x2="${bbox.minX + bbox.width}" y2="${bbox.minY + bbox.height}">
             ${gradientColors
               .map((c, i) => `<stop offset="${(i / (gradientColors.length - 1)) * 100}%" stop-color="${c}" />`)
               .join('')}
