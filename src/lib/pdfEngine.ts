@@ -1,5 +1,7 @@
 import {
   PDFDocument,
+  PDFName,
+  PDFPage,
   rgb,
   StandardFonts,
   degrees,
@@ -199,15 +201,58 @@ async function renderShapeToPngBytes(
 }
 
 /**
- * Applies text, signature, image, highlight, shape, freehand drawing, and true DSGVO redaction annotations onto a PDF
+ * Prepends a solid background color rectangle to a PDF page at the lowest layer (stream index 0)
+ * so it sits behind all existing PDF vectors, text and graphics.
+ */
+export function applyPageBackground(doc: PDFDocument, page: PDFPage, hexColor: string): void {
+  const cleanHex = (hexColor || '#FFFFFF').replace('#', '');
+  if (!cleanHex || cleanHex.toUpperCase() === 'FFFFFF') return;
+
+  const bigint = parseInt(cleanHex, 16);
+  if (isNaN(bigint)) return;
+
+  const r = ((bigint >> 16) & 255) / 255;
+  const g = ((bigint >> 8) & 255) / 255;
+  const b = (bigint & 255) / 255;
+  const { width, height } = page.getSize();
+
+  // q = push state, r g b rg = fill color, 0 0 w h re = rect, f = fill, Q = pop state
+  const bgContent = `q ${r.toFixed(4)} ${g.toFixed(4)} ${b.toFixed(4)} rg 0 0 ${width.toFixed(2)} ${height.toFixed(2)} re f Q`;
+  const bgStream = doc.context.stream(bgContent);
+  const bgStreamRef = doc.context.register(bgStream);
+
+  page.node.normalize();
+  const contents = page.node.Contents();
+  if (contents && typeof (contents as any).insert === 'function') {
+    (contents as any).insert(0, bgStreamRef);
+  } else {
+    page.node.set(PDFName.of('Contents'), doc.context.obj([bgStreamRef]));
+  }
+}
+
+/**
+ * Applies text, signature, image, highlight, shape, freehand drawing, true DSGVO redaction annotations,
+ * and optional page backgrounds onto a PDF
  */
 export async function applyAnnotationsToPdf(
   originalPdfBytes: ArrayBuffer,
-  annotations: Annotation[]
+  annotations: Annotation[],
+  pageBackgrounds?: Record<number, string>
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(originalPdfBytes);
   const fontCache = new Map<string, any>();
   const pages = pdfDoc.getPages();
+
+  // Apply page backgrounds at the very bottom (layer 0)
+  if (pageBackgrounds) {
+    for (let idx = 0; idx < pages.length; idx++) {
+      const pageNum = idx + 1;
+      const bg = pageBackgrounds[pageNum] || pageBackgrounds[-1];
+      if (bg && bg.trim() && bg.toUpperCase() !== '#FFFFFF') {
+        applyPageBackground(pdfDoc, pages[idx], bg);
+      }
+    }
+  }
 
   // 1. Check if any pages have DSGVO Redaction annotations.
   // True redaction rasterizes the page with blacked-out areas burned into the bitmap

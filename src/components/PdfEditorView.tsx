@@ -45,6 +45,7 @@ import {
   Home,
   ArrowLeft,
   Printer,
+  Palette,
 } from 'lucide-react';
 import { pdfjsLib } from '../lib/pdfWorker';
 import { AnnotationLayer } from './AnnotationLayer';
@@ -52,6 +53,7 @@ import { SignatureModal } from './SignatureModal';
 import { StampModal } from './StampModal';
 import { FormFillerModal } from './FormFillerModal';
 import { PageDecorationsModal } from './PageDecorationsModal';
+import { PageBackgroundModal } from './PageBackgroundModal';
 import { SaveDocumentModal } from './SaveDocumentModal';
 import { GeminiAiModal } from './GeminiAiModal';
 import { formatMarkdownToCleanText, extractTextFromPdf } from '../lib/geminiService';
@@ -140,6 +142,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   const [isStampModalOpen, setIsStampModalOpen] = useState(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isDecorationsModalOpen, setIsDecorationsModalOpen] = useState(false);
+  const [isBackgroundModalOpen, setIsBackgroundModalOpen] = useState(false);
+  const [pageBackgrounds, setPageBackgrounds] = useState<Record<number, string>>({});
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isDocSwitcherOpen, setIsDocSwitcherOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -237,7 +241,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     });
   }, []);
 
-  // Auto-save current workspace to IndexedDB when annotations or pdfBytes change
+  // Auto-save current workspace to IndexedDB when annotations, pageBackgrounds or pdfBytes change
   useEffect(() => {
     if (!pdfBytes || !file) return;
     const timer = setTimeout(() => {
@@ -246,6 +250,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         documentTitle,
         pdfBytes,
         annotations,
+        pageBackgrounds,
         currentPage,
         updatedAt: Date.now(),
       }).then(() => {
@@ -253,7 +258,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       });
     }, 600);
     return () => clearTimeout(timer);
-  }, [pdfBytes, annotations, documentTitle, currentPage, file]);
+  }, [pdfBytes, annotations, pageBackgrounds, documentTitle, currentPage, file]);
 
   // Central Page Change Handler (with scroll positioning)
   const handlePageChange = useCallback(
@@ -448,6 +453,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         setFile(mockFile);
         setDocumentTitle(imported.documentTitle);
         setAnnotations(imported.annotations);
+        setPageBackgrounds(imported.pageBackgrounds || {});
         setUndoStack([]);
         setRedoStack([]);
         await reloadPdfFromBuffer(imported.pdfBytes, imported.currentPage);
@@ -471,6 +477,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       const cleanName = selectedFile.name.replace(/\.pdf$/i, '');
       setDocumentTitle(cleanName.endsWith('_bearbeitet') ? cleanName : `${cleanName}_bearbeitet`);
       setAnnotations([]);
+      setPageBackgrounds({});
       setUndoStack([]);
       setRedoStack([]);
       await reloadPdfFromBuffer(buffer, 1);
@@ -491,6 +498,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     setFile(mockFile);
     setDocumentTitle(savedDraft.documentTitle || 'Dokument_bearbeitet');
     setAnnotations(savedDraft.annotations || []);
+    setPageBackgrounds(savedDraft.pageBackgrounds || {});
     setUndoStack([]);
     setRedoStack([]);
     await reloadPdfFromBuffer(savedDraft.pdfBytes, savedDraft.currentPage || 1);
@@ -661,6 +669,14 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       ctx.save();
       ctx.scale(dpr, dpr);
 
+      // 1. Draw solid background color (supports dark mode / custom cover / page backgrounds)
+      const currentBg = pageBackgrounds[currentPage] || '#FFFFFF';
+      ctx.fillStyle = currentBg;
+      ctx.fillRect(0, 0, viewport.width, viewport.height);
+      if (pageContainerRef.current) {
+        pageContainerRef.current.style.backgroundColor = currentBg;
+      }
+
       const renderContext = {
         canvasContext: ctx,
         viewport: viewport,
@@ -671,7 +687,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     } catch (err) {
       console.error('Render error:', err);
     }
-  }, [pdfDoc, currentPage, scale]);
+  }, [pdfDoc, currentPage, scale, pageBackgrounds]);
 
   useEffect(() => {
     renderCurrentPage();
@@ -1252,7 +1268,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     setExporting(true);
 
     try {
-      const modifiedBytes = await applyAnnotationsToPdf(pdfBytes, annotations);
+      const modifiedBytes = await applyAnnotationsToPdf(pdfBytes, annotations, pageBackgrounds);
       const saved = await downloadPdf(modifiedBytes, `${effectiveTitle}.pdf`, useFilePicker);
       if (saved) {
         setIsSaveModalOpen(false);
@@ -1265,12 +1281,12 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     }
   };
 
-  // Print current PDF with all annotations applied (supports native Mac app and browsers)
+  // Print current PDF with all annotations and backgrounds applied (supports native Mac app and browsers)
   const handlePrint = async () => {
     if (!pdfBytes) return;
     setIsPrinting(true);
     try {
-      const modifiedBytes = await applyAnnotationsToPdf(pdfBytes, annotations);
+      const modifiedBytes = await applyAnnotationsToPdf(pdfBytes, annotations, pageBackgrounds);
       await printPdf(modifiedBytes);
     } catch (err: any) {
       console.error('Print error:', err);
@@ -1289,7 +1305,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     };
     window.addEventListener('app-request-print', handleAppRequestPrint);
     return () => window.removeEventListener('app-request-print', handleAppRequestPrint);
-  }, [pdfBytes, annotations]);
+  }, [pdfBytes, annotations, pageBackgrounds]);
 
   // Save editable .pdftool project file
   const handleExportProject = async (customTitle?: string, useFilePicker: boolean = false) => {
@@ -1302,7 +1318,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       file?.name || 'Dokument.pdf',
       effectiveTitle,
       currentPage,
-      useFilePicker
+      useFilePicker,
+      pageBackgrounds
     );
     if (saved) {
       setIsSaveModalOpen(false);
@@ -1319,10 +1336,65 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       documentTitle: effectiveTitle,
       pdfBytes,
       annotations,
+      pageBackgrounds,
       currentPage,
       updatedAt: Date.now(),
     });
     setLastAutoSavedAt(new Date());
+  };
+
+  // Page background handler
+  const handleApplyBackground = (color: string, scope: 'currentPage' | 'allPages') => {
+    setPageBackgrounds((prev) => {
+      const updated = { ...prev };
+      if (scope === 'allPages') {
+        for (let p = 1; p <= numPages; p++) {
+          updated[p] = color;
+        }
+      } else {
+        updated[currentPage] = color;
+      }
+      return updated;
+    });
+  };
+
+  const handleResetBackground = (scope: 'currentPage' | 'allPages') => {
+    setPageBackgrounds((prev) => {
+      const updated = { ...prev };
+      if (scope === 'allPages') {
+        return {};
+      } else {
+        delete updated[currentPage];
+        return updated;
+      }
+    });
+  };
+
+  // Layer control: Move annotation to front or back
+  const handleReorderAnnotation = (
+    id: string,
+    action: 'bringToFront' | 'sendToBack'
+  ) => {
+    pushAnnotationsChange((prev) => {
+      const current = prev.find((a) => a.id === id);
+      if (!current) return prev;
+      const pageNum = current.pageNumber;
+
+      const pageAnns = prev.filter((a) => a.pageNumber === pageNum);
+      const pageIdx = pageAnns.findIndex((a) => a.id === id);
+      if (pageIdx === -1) return prev;
+
+      const newPageAnns = [...pageAnns];
+      newPageAnns.splice(pageIdx, 1);
+      if (action === 'bringToFront') {
+        newPageAnns.push(current);
+      } else {
+        newPageAnns.unshift(current);
+      }
+
+      const otherAnns = prev.filter((a) => a.pageNumber !== pageNum);
+      return [...otherAnns, ...newPageAnns];
+    });
   };
 
   // Dropzone drag events
@@ -1816,6 +1888,27 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                 <span className="hidden 2xl:inline">Seitenzahlen</span>
               </button>
 
+              {/* Page Background Color */}
+              <button
+                onClick={() => setIsBackgroundModalOpen(true)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                  pageBackgrounds[currentPage] && pageBackgrounds[currentPage] !== '#FFFFFF'
+                    ? 'bg-purple-100 text-purple-900 border border-purple-200'
+                    : 'bg-[#F5F5F7] hover:bg-purple-50 hover:text-purple-700 text-[#1D1D1F]'
+                }`}
+                title="Seitenhintergrundfarbe (Schwarz, Creme, Weiß oder frei) für diese Seite oder das gesamte Dokument wählen"
+              >
+                <Palette
+                  size={14}
+                  className={
+                    pageBackgrounds[currentPage] && pageBackgrounds[currentPage] !== '#FFFFFF'
+                      ? 'text-purple-700'
+                      : ''
+                  }
+                />
+                <span className="hidden 2xl:inline">Hintergrund</span>
+              </button>
+
               {/* Interactive Form Fields button (highlighted when PDF has AcroForms) */}
               {formFields.length > 0 && (
                 <button
@@ -2114,10 +2207,21 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                       onClick={() => handlePageChange(pNum, 'top')}
                       className="w-full flex flex-col items-center"
                     >
-                      <div className="w-24 h-32 bg-gray-50 border border-gray-200 rounded flex items-center justify-center text-xs font-semibold text-gray-400 shadow-inner">
+                      <div
+                        className="w-24 h-32 border border-gray-200 rounded flex items-center justify-center text-xs font-semibold shadow-inner transition-colors"
+                        style={{
+                          backgroundColor: pageBackgrounds[pNum] || '#FFFFFF',
+                        }}
+                      >
                         <FileText
                           size={24}
-                          className={currentPage === pNum ? 'text-[#0071E3]' : 'text-gray-300'}
+                          className={
+                            pageBackgrounds[pNum] && pageBackgrounds[pNum] !== '#FFFFFF'
+                              ? 'text-white/60'
+                              : currentPage === pNum
+                              ? 'text-[#0071E3]'
+                              : 'text-gray-300'
+                          }
                         />
                       </div>
                       <span className="text-xs font-medium text-gray-600 mt-1.5">Seite {pNum}</span>
@@ -2218,6 +2322,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                       onUpdateAnnotation={handleUpdateAnnotation}
                       onDeleteAnnotation={handleDeleteAnnotation}
                       onDuplicateAnnotation={handleDuplicateAnnotation}
+                      onReorderAnnotation={handleReorderAnnotation}
                       selectedAnnotationId={selectedAnnId}
                       onSelectAnnotation={setSelectedAnnId}
                     />
@@ -2334,6 +2439,17 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         pdfBytes={pdfBytes}
         numPages={numPages}
         onApplyDecorations={(updatedBytes) => reloadPdfFromBuffer(updatedBytes, currentPage)}
+      />
+
+      {/* Page Background Color Modal */}
+      <PageBackgroundModal
+        isOpen={isBackgroundModalOpen}
+        onClose={() => setIsBackgroundModalOpen(false)}
+        currentPage={currentPage}
+        numPages={numPages}
+        currentColor={pageBackgrounds[currentPage] || '#FFFFFF'}
+        onApplyBackground={handleApplyBackground}
+        onResetBackground={handleResetBackground}
       />
 
       {/* Save & Rename Document Modal (PDF Export, Editable .pdftool Project, or Internal Draft) */}

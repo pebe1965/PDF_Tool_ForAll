@@ -22,6 +22,8 @@ import {
   Heading1,
   CheckSquare,
   Square,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import {
   TextAnnotation,
@@ -45,6 +47,7 @@ interface AnnotationLayerProps {
   onUpdateAnnotation: (ann: Annotation) => void;
   onDeleteAnnotation: (id: string) => void;
   onDuplicateAnnotation?: (ann: Annotation) => void;
+  onReorderAnnotation?: (id: string, action: 'bringToFront' | 'sendToBack') => void;
   selectedAnnotationId: string | null;
   onSelectAnnotation: (id: string | null) => void;
 }
@@ -74,6 +77,8 @@ const TextAnnotationItem: React.FC<{
   onUpdate: (ann: TextAnnotation) => void;
   onDelete: () => void;
   onDuplicate?: () => void;
+  onSendToBack?: () => void;
+  onBringToFront?: () => void;
   onStartDrag: (e: React.PointerEvent) => void;
   onStartResize: (e: React.PointerEvent) => void;
 }> = ({
@@ -86,6 +91,8 @@ const TextAnnotationItem: React.FC<{
   onUpdate,
   onDelete,
   onDuplicate,
+  onSendToBack,
+  onBringToFront,
   onStartDrag,
   onStartResize,
 }) => {
@@ -568,6 +575,26 @@ const TextAnnotationItem: React.FC<{
               </button>
             )}
 
+            {onSendToBack && (
+              <button
+                onClick={onSendToBack}
+                className="p-1 hover:bg-white/20 rounded text-gray-300 hover:text-white transition"
+                title="Ebene: Ganz nach hinten (hinter andere Elemente legen)"
+              >
+                <ArrowDown size={13} />
+              </button>
+            )}
+
+            {onBringToFront && (
+              <button
+                onClick={onBringToFront}
+                className="p-1 hover:bg-white/20 rounded text-gray-300 hover:text-white transition"
+                title="Ebene: Ganz nach vorne (vor alle anderen Elemente legen)"
+              >
+                <ArrowUp size={13} />
+              </button>
+            )}
+
             <button
               onClick={onDelete}
               className="p-1 hover:bg-red-500 rounded text-red-300 hover:text-white transition"
@@ -930,6 +957,8 @@ const ImageAnnotationItem: React.FC<{
   onUpdate: (ann: ImageAnnotation) => void;
   onDelete: () => void;
   onDuplicate?: () => void;
+  onSendToBack?: () => void;
+  onBringToFront?: () => void;
   onStartDrag: (e: React.PointerEvent) => void;
   onStartCornerResize: (e: React.PointerEvent) => void;
   onStartRightResize: (e: React.PointerEvent) => void;
@@ -943,6 +972,8 @@ const ImageAnnotationItem: React.FC<{
   onUpdate,
   onDelete,
   onDuplicate,
+  onSendToBack,
+  onBringToFront,
   onStartDrag,
   onStartCornerResize,
   onStartRightResize,
@@ -1126,6 +1157,26 @@ const ImageAnnotationItem: React.FC<{
             </button>
           )}
 
+          {onSendToBack && (
+            <button
+              onClick={onSendToBack}
+              className="p-1 hover:bg-white/20 rounded text-gray-300 hover:text-white transition"
+              title="Ebene: Ganz nach hinten (hinter andere Elemente legen)"
+            >
+              <ArrowDown size={13} />
+            </button>
+          )}
+
+          {onBringToFront && (
+            <button
+              onClick={onBringToFront}
+              className="p-1 hover:bg-white/20 rounded text-gray-300 hover:text-white transition"
+              title="Ebene: Ganz nach vorne (vor alle anderen Elemente legen)"
+            >
+              <ArrowUp size={13} />
+            </button>
+          )}
+
           <button
             onClick={onDelete}
             className="p-1 hover:bg-red-500 rounded text-red-300 hover:text-white transition"
@@ -1191,6 +1242,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   onUpdateAnnotation,
   onDeleteAnnotation,
   onDuplicateAnnotation,
+  onReorderAnnotation,
   selectedAnnotationId,
   onSelectAnnotation,
 }) => {
@@ -1460,6 +1512,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
               onUpdate={(updated) => onUpdateAnnotation(updated)}
               onDelete={() => onDeleteAnnotation(ann.id)}
               onDuplicate={() => onDuplicateAnnotation && onDuplicateAnnotation(ann)}
+              onSendToBack={() => onReorderAnnotation && onReorderAnnotation(ann.id, 'sendToBack')}
+              onBringToFront={() => onReorderAnnotation && onReorderAnnotation(ann.id, 'bringToFront')}
               onStartDrag={(e) => handlePointerDownDrag(e, ann as TextAnnotation)}
               onStartResize={(e) => handlePointerDownTextResize(e, ann as TextAnnotation)}
             />
@@ -1478,6 +1532,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
               onUpdate={(updated) => onUpdateAnnotation(updated)}
               onDelete={() => onDeleteAnnotation(ann.id)}
               onDuplicate={() => onDuplicateAnnotation && onDuplicateAnnotation(ann)}
+              onSendToBack={() => onReorderAnnotation && onReorderAnnotation(ann.id, 'sendToBack')}
+              onBringToFront={() => onReorderAnnotation && onReorderAnnotation(ann.id, 'bringToFront')}
               onStartDrag={(e) => handlePointerDownDrag(e, ann as ImageAnnotation)}
               onStartCornerResize={(e) => handlePointerDownImageResize(e, ann as ImageAnnotation, 'corner')}
               onStartRightResize={(e) => handlePointerDownImageResize(e, ann as ImageAnnotation, 'right')}
@@ -1741,6 +1797,24 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                       >
                         <Copy size={12} />
                       </button>
+                    )}
+                    {onReorderAnnotation && (
+                      <>
+                        <button
+                          onClick={() => onReorderAnnotation(sh.id, 'sendToBack')}
+                          className="p-1 hover:bg-white/20 rounded text-gray-300 hover:text-white"
+                          title="Ebene: Ganz nach hinten (hinter andere Elemente legen)"
+                        >
+                          <ArrowDown size={12} />
+                        </button>
+                        <button
+                          onClick={() => onReorderAnnotation(sh.id, 'bringToFront')}
+                          className="p-1 hover:bg-white/20 rounded text-gray-300 hover:text-white"
+                          title="Ebene: Ganz nach vorne (vor alle anderen Elemente legen)"
+                        >
+                          <ArrowUp size={12} />
+                        </button>
+                      </>
                     )}
                     <button
                       onClick={() => onDeleteAnnotation(sh.id)}

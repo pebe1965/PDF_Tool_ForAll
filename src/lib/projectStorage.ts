@@ -10,6 +10,7 @@ export interface SavedWorkspaceDraft {
   documentTitle: string;
   pdfBytes: ArrayBuffer;
   annotations: Annotation[];
+  pageBackgrounds?: Record<number, string>;
   currentPage: number;
   updatedAt: number;
 }
@@ -23,6 +24,7 @@ export interface ProjectFilePayload {
   savedAt: string;
   pdfBase64: string;
   annotations: Annotation[];
+  pageBackgrounds?: Record<number, string>;
 }
 
 function openWorkspaceDb(): Promise<IDBDatabase> {
@@ -114,7 +116,8 @@ export async function exportProjectFile(
   fileName: string,
   documentTitle: string,
   currentPage: number,
-  useFilePicker: boolean = false
+  useFilePicker: boolean = false,
+  pageBackgrounds?: Record<number, string>
 ): Promise<boolean> {
   const payload: ProjectFilePayload = {
     format: 'PDF_TOOL_FORALL_PROJECT_V1',
@@ -125,6 +128,7 @@ export async function exportProjectFile(
     savedAt: new Date().toISOString(),
     pdfBase64: arrayBufferToBase64(pdfBytes),
     annotations,
+    pageBackgrounds,
   };
 
   const jsonStr = JSON.stringify(payload);
@@ -168,6 +172,7 @@ export async function exportProjectFile(
 export async function importProjectFile(file: File): Promise<{
   pdfBytes: ArrayBuffer;
   annotations: Annotation[];
+  pageBackgrounds?: Record<number, string>;
   fileName: string;
   documentTitle: string;
   currentPage: number;
@@ -180,6 +185,7 @@ export async function importProjectFile(file: File): Promise<{
   return {
     pdfBytes: base64ToArrayBuffer(payload.pdfBase64),
     annotations: Array.isArray(payload.annotations) ? payload.annotations : [],
+    pageBackgrounds: payload.pageBackgrounds || {},
     fileName: payload.fileName || 'Dokument.pdf',
     documentTitle: payload.documentTitle || 'Dokument_bearbeitet',
     currentPage: payload.currentPage || 1,
