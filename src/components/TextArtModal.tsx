@@ -34,6 +34,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
 }) => {
   const [text, setText] = useState<string>(initialData?.text || 'NOTIONARY ATLAS');
   const [fontFamily, setFontFamily] = useState<string>(initialData?.fontFamily || 'Impact');
+  const [fontSize, setFontSize] = useState<number>(initialData?.fontSize || 48);
   const [curveType, setCurveType] = useState<TextArtAnnotation['curveType']>(
     initialData?.curveType || 'arc-up'
   );
@@ -48,6 +49,9 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
   const [imageDataUrl, setImageDataUrl] = useState<string | undefined>(
     initialData?.imageDataUrl
   );
+  const [imageOffsetX, setImageOffsetX] = useState<number>(initialData?.imageOffsetX ?? 0);
+  const [imageOffsetY, setImageOffsetY] = useState<number>(initialData?.imageOffsetY ?? 0);
+  const [imageScale, setImageScale] = useState<number>(initialData?.imageScale ?? 1.0);
   const [strokeWidth, setStrokeWidth] = useState<number>(initialData?.strokeWidth ?? 1);
   const [strokeColor, setStrokeColor] = useState<string>(
     initialData?.strokeColor || '#000000'
@@ -108,38 +112,46 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
     pageNumber: 1,
     x: 0,
     y: 0,
-    width: 0.6,
-    height: 0.22,
+    width: 0.65,
+    height: 0.24,
     text: text.trim() || 'TextArt',
     fontFamily,
+    fontSize,
     curveType,
     bend,
     fillMode,
     color,
     gradientPreset,
     imageDataUrl,
+    imageOffsetX,
+    imageOffsetY,
+    imageScale,
     strokeWidth,
     strokeColor,
     has3dShadow,
     shadowColor,
   };
 
-  const previewSvg = buildTextArtSvgMarkup(currentPreviewArt, 600, 240, 'modal_preview');
+  const previewSvg = buildTextArtSvgMarkup(currentPreviewArt, 800, 320, 'modal_preview');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onInsert({
       type: 'textart',
-      width: curveType === 'circle' ? 0.45 : 0.65,
-      height: curveType === 'circle' ? 0.35 : 0.22,
+      width: curveType === 'circle' ? 0.48 : 0.65,
+      height: curveType === 'circle' ? 0.36 : 0.24,
       text: text.trim() || 'TextArt',
       fontFamily,
+      fontSize,
       curveType,
       bend,
       fillMode,
       color,
       gradientPreset,
       imageDataUrl,
+      imageOffsetX,
+      imageOffsetY,
+      imageScale,
       strokeWidth,
       strokeColor,
       has3dShadow,
@@ -187,14 +199,14 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
               </button>
             </div>
             <div
-              className={`w-full h-48 rounded-2xl flex items-center justify-center border transition p-4 ${
+              className={`w-full h-56 sm:h-64 rounded-2xl flex items-center justify-center border transition p-2 overflow-hidden ${
                 previewBgDark
                   ? 'bg-[#1D1D1F] border-gray-800 shadow-inner'
                   : 'bg-white border-gray-200 shadow-inner'
               }`}
             >
               <div
-                className="w-full h-full flex items-center justify-center"
+                className="w-full h-full flex items-center justify-center overflow-visible"
                 dangerouslySetInnerHTML={{ __html: previewSvg }}
               />
             </div>
@@ -313,6 +325,48 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                   </optgroup>
                 </select>
               </div>
+
+              {/* Schriftgröße stufenlos */}
+              <div className="space-y-1.5 bg-gray-50 p-3 rounded-2xl border border-gray-200">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-gray-700">Schriftgröße</span>
+                  <span className="font-bold text-[#0071E3] bg-blue-50 px-2.5 py-0.5 rounded-lg border border-blue-200">
+                    {fontSize} px
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="16"
+                  max="96"
+                  step="1"
+                  value={fontSize}
+                  onChange={(e) => setFontSize(Number(e.target.value))}
+                  className="w-full accent-[#0071E3]"
+                />
+                <div className="flex items-center justify-between text-[10px] text-gray-500 px-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setFontSize(28)}
+                    className="hover:text-blue-600 transition"
+                  >
+                    Klein (28px)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFontSize(46)}
+                    className="hover:text-blue-600 transition"
+                  >
+                    Mittel (46px)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFontSize(68)}
+                    className="hover:text-blue-600 transition"
+                  >
+                    Groß (68px)
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Right Column: Füllung & Effekte */}
@@ -428,10 +482,86 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                   </div>
 
                   {imageDataUrl ? (
-                    <div className="relative w-full h-16 rounded-xl overflow-hidden border border-gray-300 group">
-                      <img src={imageDataUrl} alt="Maske" className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition text-white text-xs font-medium">
-                        Klicken zum Ändern
+                    <div className="space-y-3">
+                      <div className="relative w-full h-16 rounded-xl overflow-hidden border border-gray-300 group">
+                        <img src={imageDataUrl} alt="Maske" className="w-full h-full object-cover" />
+                        <div
+                          onClick={() => fileInputRef.current?.click()}
+                          className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition text-white text-xs font-medium cursor-pointer"
+                        >
+                          Klicken zum Ändern
+                        </div>
+                      </div>
+
+                      {/* Bildposition & Zoom Regler */}
+                      <div className="space-y-2.5 pt-2 border-t border-gray-200">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold text-gray-700">Bild im Text ausrichten</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setImageOffsetX(0);
+                              setImageOffsetY(0);
+                              setImageScale(1.0);
+                            }}
+                            className="text-[11px] text-[#0071E3] hover:underline font-medium"
+                          >
+                            Zurücksetzen
+                          </button>
+                        </div>
+
+                        {/* Vertikale Position (Y) */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[11px] text-gray-600">
+                            <span>Vertikal (Oben ↔ Unten)</span>
+                            <span className="font-semibold text-[#0071E3]">
+                              {imageOffsetY > 0 ? `+${imageOffsetY}%` : `${imageOffsetY}%`}
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="-60"
+                            max="60"
+                            value={imageOffsetY}
+                            onChange={(e) => setImageOffsetY(Number(e.target.value))}
+                            className="w-full accent-[#0071E3]"
+                          />
+                        </div>
+
+                        {/* Horizontale Position (X) */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[11px] text-gray-600">
+                            <span>Horizontal (Links ↔ Rechts)</span>
+                            <span className="font-semibold text-[#0071E3]">
+                              {imageOffsetX > 0 ? `+${imageOffsetX}%` : `${imageOffsetX}%`}
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="-60"
+                            max="60"
+                            value={imageOffsetX}
+                            onChange={(e) => setImageOffsetX(Number(e.target.value))}
+                            className="w-full accent-[#0071E3]"
+                          />
+                        </div>
+
+                        {/* Bild Zoom */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[11px] text-gray-600">
+                            <span>Bild-Größe / Zoom</span>
+                            <span className="font-semibold text-[#0071E3]">{Math.round(imageScale * 100)} %</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.5"
+                            max="3.0"
+                            step="0.05"
+                            value={imageScale}
+                            onChange={(e) => setImageScale(Number(e.target.value))}
+                            className="w-full accent-[#0071E3]"
+                          />
+                        </div>
                       </div>
                     </div>
                   ) : (

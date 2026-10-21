@@ -103,6 +103,9 @@ export interface TextArtAnnotation {
   color: string;
   gradientPreset?: 'gold' | 'sunset' | 'neon' | 'rainbow' | 'silver' | 'ocean';
   imageDataUrl?: string; // image mask data URL
+  imageOffsetX?: number; // -100 to +100 (%)
+  imageOffsetY?: number; // -100 to +100 (%)
+  imageScale?: number; // 0.5 to 3.0
   strokeColor?: string;
   strokeWidth?: number; // 0 = none
   shadowColor?: string;

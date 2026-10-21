@@ -154,40 +154,43 @@ export function getFontFamilyCss(family?: string): string {
 
 /**
  * Generates an SVG path definition based on curveType and bend (-100 to +100)
- * Bounding coordinate space is 600 x 240
+ * Bounding coordinate space is 800 x 320 with plenty of headroom
  */
 export function getSvgPathD(curveType: TextArtAnnotation['curveType'], bend: number): string {
-  const normBend = Math.max(-100, Math.min(100, bend));
+  const normBend = Math.max(5, Math.min(100, Math.abs(bend)));
   const intensity = normBend / 100;
 
   switch (curveType) {
     case 'arc-up': {
-      // Middle points up (smaller Y), ends point down
-      const startY = 175 + intensity * 35;
-      const endY = 175 + intensity * 35;
-      const midY = 175 - intensity * 125;
-      return `M 30,${startY} Q 300,${midY} 570,${endY}`;
+      // Middle arcs up (smaller Y), ends point down
+      const startY = 245 + intensity * 15;
+      const endY = 245 + intensity * 15;
+      const midY = 245 - intensity * 145;
+      return `M 40,${startY} Q 400,${midY} 760,${endY}`;
     }
     case 'arc-down': {
-      // Middle points down (larger Y), ends point up
-      const startY = 65 - intensity * 35;
-      const endY = 65 - intensity * 35;
-      const midY = 65 + intensity * 125;
-      return `M 30,${startY} Q 300,${midY} 570,${endY}`;
+      // Middle dips down (larger Y), ends point up
+      const startY = 85 - intensity * 15;
+      const endY = 85 - intensity * 15;
+      const midY = 85 + intensity * 145;
+      return `M 40,${startY} Q 400,${midY} 760,${endY}`;
     }
     case 'wave': {
       // S-curve wave
-      const waveH = intensity * 85;
-      return `M 30,120 Q 165,${120 - waveH} 300,120 T 570,120`;
+      const waveH = intensity * 75;
+      return `M 40,160 Q 220,${160 - waveH} 400,160 T 760,160`;
     }
     case 'circle': {
       // Upper half circle / arch for seals and circular stamps
-      const r = Math.max(80, 240 - Math.abs(intensity) * 110);
-      return `M ${300 - r},170 A ${r},${r} 0 0,1 ${300 + r},170`;
+      // Generous radius and arc length so full words fit without cutoffs
+      const r = Math.max(160, 240 - intensity * 60);
+      const cx = 400;
+      const cy = 275;
+      return `M ${cx - r},${cy - 20} A ${r},${r} 0 0,1 ${cx + r},${cy - 20}`;
     }
     case 'flat':
     default:
-      return `M 30,120 L 570,120`;
+      return `M 40,160 L 760,160`;
   }
 }
 
@@ -196,8 +199,8 @@ export function getSvgPathD(curveType: TextArtAnnotation['curveType'], bend: num
  */
 export function buildTextArtSvgMarkup(
   art: TextArtAnnotation,
-  viewWidth = 600,
-  viewHeight = 240,
+  viewWidth = 800,
+  viewHeight = 320,
   uniqueId = `art_${Date.now()}`
 ): string {
   const pathD = getSvgPathD(art.curveType, art.bend);
@@ -205,9 +208,9 @@ export function buildTextArtSvgMarkup(
   const gradId = `grad_${uniqueId}`;
   const patId = `pat_${uniqueId}`;
 
-  // Font size calculation: scale text nicely according to character count
+  // Font size calculation: scale text nicely according to character count or user setting
   const textLen = (art.text || 'TextArt').length;
-  const baseSize = textLen > 25 ? 36 : textLen > 15 ? 46 : textLen > 8 ? 58 : 68;
+  const baseSize = textLen > 25 ? 28 : textLen > 18 ? 34 : textLen > 12 ? 42 : textLen > 7 ? 50 : 60;
   const effectiveSize = art.fontSize || baseSize;
   const fontFamilyCss = getFontFamilyCss(art.fontFamily);
   const strokeW = art.strokeWidth || 0;
@@ -222,8 +225,14 @@ export function buildTextArtSvgMarkup(
 
   const gradientColors = GRADIENT_DEFS[art.gradientPreset || 'gold'] || GRADIENT_DEFS.gold;
 
+  const imgScale = art.imageScale || 1.0;
+  const imgW = viewWidth * imgScale;
+  const imgH = viewHeight * imgScale;
+  const imgX = ((art.imageOffsetX || 0) / 100) * viewWidth + (viewWidth - imgW) / 2;
+  const imgY = ((art.imageOffsetY || 0) / 100) * viewHeight + (viewHeight - imgH) / 2;
+
   return `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewWidth} ${viewHeight}" width="100%" height="100%">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewWidth} ${viewHeight}" width="100%" height="100%" overflow="visible" style="overflow: visible;">
       <defs>
         <path id="${pathId}" d="${pathD}" fill="none" />
         ${
@@ -241,7 +250,7 @@ export function buildTextArtSvgMarkup(
           art.fillMode === 'image' && art.imageDataUrl
             ? `
           <pattern id="${patId}" patternUnits="userSpaceOnUse" width="${viewWidth}" height="${viewHeight}">
-            <image href="${art.imageDataUrl}" width="${viewWidth}" height="${viewHeight}" preserveAspectRatio="xMidYMid slice" />
+            <image href="${art.imageDataUrl}" x="${imgX}" y="${imgY}" width="${imgW}" height="${imgH}" preserveAspectRatio="xMidYMid slice" />
           </pattern>
         `
             : ''
@@ -331,10 +340,11 @@ export async function renderTextArtToPngBytes(
   heightPt: number
 ): Promise<ArrayBuffer> {
   const scale = 3;
-  const w = Math.max(120, Math.round(widthPt * scale));
-  const h = Math.max(60, Math.round(heightPt * scale));
+  const w = Math.max(160, Math.round(widthPt * scale));
+  const h = Math.max(80, Math.round(heightPt * scale));
 
-  const svgMarkup = buildTextArtSvgMarkup(art, w, h, `pdf_${art.id}_${Date.now()}`);
+  // Canonical 800x320 SVG space matching the editor preview 100%
+  const svgMarkup = buildTextArtSvgMarkup(art, 800, 320, `pdf_${art.id}_${Date.now()}`);
   const blob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
   const url = URL.createObjectURL(blob);
 

@@ -1954,7 +1954,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
           const topPx = art.y * pageHeight;
           const widthPx = art.width * pageWidth;
           const heightPx = art.height * pageHeight;
-          const svgMarkup = buildTextArtSvgMarkup(art, 600, 240, `layer_${art.id}`);
+          const svgMarkup = buildTextArtSvgMarkup(art, 800, 320, `layer_${art.id}`);
 
           return (
             <div
