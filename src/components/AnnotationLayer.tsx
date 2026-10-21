@@ -521,7 +521,7 @@ const TextAnnotationItem: React.FC<{
             <div className="w-[1px] h-3.5 bg-white/20" />
 
             <div className="flex items-center gap-1" title="Textfarbe">
-              {['#000000', '#0071E3', '#E02020', '#107C41'].map((c) => (
+              {['#000000', '#FFFFFF', '#0071E3', '#2BB3A3', '#F0A33A', '#E02020', '#107C41'].map((c) => (
                 <button
                   key={c}
                   onClick={() => onUpdate({ ...textAnn, color: c })}
@@ -1778,7 +1778,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                     className="absolute -top-10 left-0 flex items-center gap-1.5 bg-[#1D1D1F] text-white px-2 py-1 rounded-xl shadow-xl text-xs z-30 whitespace-nowrap"
                     onPointerDown={(e) => e.stopPropagation()}
                   >
-                    {['#107C41', '#E02020', '#0071E3', '#000000', '#D97706'].map((c) => (
+                    {['#000000', '#FFFFFF', '#0071E3', '#2BB3A3', '#F0A33A', '#E02020', '#107C41'].map((c) => (
                       <button
                         key={c}
                         onClick={() => onUpdateAnnotation({ ...sh, color: c })}

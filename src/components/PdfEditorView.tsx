@@ -676,13 +676,17 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       if (pageContainerRef.current) {
         pageContainerRef.current.style.backgroundColor = currentBg;
       }
+      if (canvasRef.current) {
+        canvasRef.current.style.backgroundColor = currentBg;
+      }
 
       const renderContext = {
         canvasContext: ctx,
         viewport: viewport,
+        background: currentBg,
       };
 
-      await page.render(renderContext).promise;
+      await page.render(renderContext as any).promise;
       ctx.restore();
     } catch (err) {
       console.error('Render error:', err);
@@ -712,6 +716,14 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     const normY = Math.max(0.02, Math.min(0.92, clickY / canvasDimensions.height));
 
     if (activeTool === 'add-text') {
+      const currentBg = pageBackgrounds[currentPage] || '#FFFFFF';
+      const isDark = (() => {
+        const clean = currentBg.replace('#', '');
+        if (clean.length !== 6) return false;
+        const num = parseInt(clean, 16);
+        return ((num >> 16 & 255) * 299 + (num >> 8 & 255) * 587 + (num & 255) * 114) / 1000 < 128;
+      })();
+
       const newTextAnn: TextAnnotation = {
         id: `text_${Date.now()}`,
         type: 'text',
@@ -721,7 +733,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         width: 0.36,
         text: '',
         fontSize: 14,
-        color: '#000000',
+        color: isDark ? '#FFFFFF' : '#000000',
         backgroundColor: 'transparent',
       };
       pushAnnotationsChange((prev) => [...prev, newTextAnn]);
@@ -2284,16 +2296,23 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                   onPointerUp={handlePagePointerUp}
                   onDragOver={handleDragOver}
                   onDrop={handleViewportDrop}
-                  className={`relative bg-white shadow-2xl rounded-sm transition-all ${
+                  className={`relative shadow-2xl rounded-sm transition-colors ${
                     activeTool !== 'select' ? 'cursor-crosshair' : 'cursor-default'
                   }`}
                   style={{
                     width: canvasDimensions.width || 'auto',
                     height: canvasDimensions.height || 'auto',
+                    backgroundColor: pageBackgrounds[currentPage] || '#FFFFFF',
                   }}
                 >
                   {/* Mozilla PDF.js Canvas */}
-                  <canvas ref={canvasRef} className="block" />
+                  <canvas
+                    ref={canvasRef}
+                    className="block"
+                    style={{
+                      backgroundColor: pageBackgrounds[currentPage] || '#FFFFFF',
+                    }}
+                  />
 
                   {/* Live Freehand Stroke Preview */}
                   {isDrawingStroke && currentStrokePoints.length > 1 && (

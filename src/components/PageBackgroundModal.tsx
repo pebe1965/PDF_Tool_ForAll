@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Palette, Check, RotateCcw } from 'lucide-react';
 
 export interface PageBackgroundModalProps {
@@ -33,6 +33,12 @@ export const PageBackgroundModal: React.FC<PageBackgroundModalProps> = ({
 }) => {
   const [selectedColor, setSelectedColor] = useState<string>(currentColor || '#FFFFFF');
   const [scope, setScope] = useState<'currentPage' | 'allPages'>('currentPage');
+
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedColor(currentColor || '#FFFFFF');
+    }
+  }, [isOpen, currentColor]);
 
   if (!isOpen) return null;
 
