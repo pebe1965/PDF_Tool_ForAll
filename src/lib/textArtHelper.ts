@@ -293,22 +293,136 @@ export function getSvgPathD(
 }
 
 /**
+ * Calculates the tight visual bounding box of the rendered text
+ * for any font, letter spacing, font size, and curve/bend distortion.
+ */
+export function getTextArtBoundingBox(
+  art: TextArtAnnotation,
+  effectiveSize: number
+): { minX: number; minY: number; width: number; height: number } {
+  const rawText = art.text ?? 'TextArt';
+  const rawLines = rawText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  const lines = rawLines.length > 0 ? rawLines : ['TextArt'];
+  const totalLines = lines.length;
+  const factor = FONT_WIDTH_FACTORS[art.fontFamily] || 0.75;
+  const letterSpacing = art.letterSpacing || 0;
+  const fontSize = effectiveSize;
+  const lineSpacing = fontSize * 1.15;
+  const normBend = Math.max(5, Math.min(100, Math.abs(art.bend ?? 40)));
+  const intensity = normBend / 100;
+  const curveType = art.curveType || 'flat';
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  for (let i = 0; i < totalLines; i++) {
+    const line = lines[i];
+    const chars = Math.max(1, line.length);
+    const lineW = chars * fontSize * factor + (chars - 1) * letterSpacing;
+    const hw = lineW / 2;
+    const lineOffset = (i - (totalLines - 1) / 2) * lineSpacing;
+    const midY = 160 + lineOffset;
+
+    let lMinX: number;
+    let lMaxX: number;
+    let lMinY: number;
+    let lMaxY: number;
+
+    if (curveType === 'arc-up') {
+      const R = Math.max(120, 420 - intensity * 290) + lineOffset;
+      const cy = midY + R;
+      const theta = Math.min(Math.PI * 1.2, lineW / R);
+      const spanX = theta >= Math.PI ? R : R * Math.sin(theta / 2);
+      lMinX = 400 - spanX;
+      lMaxX = 400 + spanX;
+      lMinY = midY - fontSize * 0.88;
+      lMaxY = Math.max(midY + fontSize * 0.25, cy - R * Math.cos(theta / 2) + fontSize * 0.25);
+    } else if (curveType === 'arc-down') {
+      const R = Math.max(120, 420 - intensity * 290) - lineOffset;
+      const cy = midY - R;
+      const theta = Math.min(Math.PI * 1.2, lineW / R);
+      const spanX = theta >= Math.PI ? R : R * Math.sin(theta / 2);
+      lMinX = 400 - spanX;
+      lMaxX = 400 + spanX;
+      lMaxY = midY + fontSize * 0.25;
+      lMinY = Math.min(midY - fontSize * 0.88, cy + R * Math.cos(theta / 2) - fontSize * 0.88);
+    } else if (curveType === 'circle') {
+      const r = Math.max(150, 240 - intensity * 60) + lineOffset;
+      const theta = Math.min(Math.PI * 1.5, lineW / r);
+      const spanX = theta >= Math.PI ? r : r * Math.sin(theta / 2);
+      lMinX = 400 - spanX;
+      lMaxX = 400 + spanX;
+      lMinY = midY + r * 0.4 - r - fontSize * 0.88;
+      lMaxY = midY + r * 0.4 - r * Math.cos(theta / 2) + fontSize * 0.25;
+    } else if (curveType === 'wave') {
+      const waveH = intensity * 75;
+      const effWaveH = Math.min(waveH, waveH * (lineW / 400));
+      lMinX = 400 - hw;
+      lMaxX = 400 + hw;
+      lMinY = midY - effWaveH - fontSize * 0.88;
+      lMaxY = midY + effWaveH + fontSize * 0.25;
+    } else {
+      lMinX = 400 - hw;
+      lMaxX = 400 + hw;
+      lMinY = midY - fontSize * 0.88;
+      lMaxY = midY + fontSize * 0.25;
+    }
+
+    if (lMinX < minX) minX = lMinX;
+    if (lMaxX > maxX) maxX = lMaxX;
+    if (lMinY < minY) minY = lMinY;
+    if (lMaxY > maxY) maxY = lMaxY;
+  }
+
+  const strokeW = art.strokeWidth || 0;
+  if (strokeW > 0) {
+    const sExtra = strokeW * 2.5;
+    minX -= sExtra;
+    maxX += sExtra;
+    minY -= sExtra;
+    maxY += sExtra;
+  }
+  if (art.has3dShadow) {
+    maxX += 9;
+    maxY += 9;
+  }
+  const padX = Math.max(8, fontSize * 0.06);
+  const padY = Math.max(8, fontSize * 0.06);
+  minX -= padX;
+  maxX += padX;
+  minY -= padY;
+  maxY += padY;
+
+  return {
+    minX: Math.round(minX),
+    minY: Math.round(minY),
+    width: Math.max(40, Math.round(maxX - minX)),
+    height: Math.max(30, Math.round(maxY - minY)),
+  };
+}
+
+/**
  * Builds standalone SVG markup string for rendering or exporting to PNG
- * Using canonical 800x320 coordinate system with guaranteed visible bounds
+ * Using tight adaptive bounding box so the text fills the full width and length
  */
 export function buildTextArtSvgMarkup(
   art: TextArtAnnotation,
-  viewWidth = 800,
-  viewHeight = 320,
-  uniqueId = `art_${Date.now()}`
+  _viewWidth = 800,
+  _viewHeight = 320,
+  uniqueId = `art_${Date.now()}`,
+  forceAspect?: 'meet' | 'none'
 ): string {
   const rawText = art.text ?? 'TextArt';
   const rawLines = rawText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
   const lines = rawLines.length > 0 ? rawLines : ['TextArt'];
 
-  // Smart safe effective size: guarantees no clipping of characters or ascenders/descenders
-  const maxSafeSize = calculateFitToWidthFontSize(rawText, art.fontFamily, art.letterSpacing || 0, 720, 250);
-  const effectiveSize = Math.min(art.fontSize || 68, maxSafeSize);
+  // Font size chosen by user; fallback to 68 without artificial clamp
+  const effectiveSize = art.fontSize || 68;
+
+  // Compute tight visual bounding box so text fills the entire frame cleanly
+  const bbox = getTextArtBoundingBox(art, effectiveSize);
 
   const fontFamilyCss = getFontFamilyCss(art.fontFamily);
   const strokeW = art.strokeWidth || 0;
@@ -328,10 +442,10 @@ export function buildTextArtSvgMarkup(
   const gradientColors = GRADIENT_DEFS[art.gradientPreset || 'gold'] || GRADIENT_DEFS.gold;
 
   const imgScale = art.imageScale || 1.0;
-  const imgW = viewWidth * imgScale;
-  const imgH = viewHeight * imgScale;
-  const imgX = (viewWidth - imgW) / 2 + ((art.imageOffsetX || 0) / 100) * viewWidth;
-  const imgY = (viewHeight - imgH) / 2 + ((art.imageOffsetY || 0) / 100) * viewHeight;
+  const imgW = bbox.width * imgScale;
+  const imgH = bbox.height * imgScale;
+  const imgX = bbox.minX + (bbox.width - imgW) / 2 + ((art.imageOffsetX || 0) / 100) * bbox.width;
+  const imgY = bbox.minY + (bbox.height - imgH) / 2 + ((art.imageOffsetY || 0) / 100) * bbox.height;
 
   // Build path defs for each line
   const pathsDef = lines
@@ -417,8 +531,17 @@ export function buildTextArtSvgMarkup(
     )
     .join('');
 
+  const preserveAspect =
+    forceAspect === 'meet'
+      ? 'xMidYMid meet'
+      : forceAspect === 'none'
+      ? 'none'
+      : art.stretchToFit === false
+      ? 'xMidYMid meet'
+      : 'none';
+
   return `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewWidth} ${viewHeight}" width="100%" height="100%" overflow="visible" style="overflow: visible;">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="${bbox.minX} ${bbox.minY} ${bbox.width} ${bbox.height}" width="100%" height="100%" preserveAspectRatio="${preserveAspect}" overflow="visible" style="overflow: visible;">
       <defs>
         ${pathsDef}
         ${
@@ -435,7 +558,7 @@ export function buildTextArtSvgMarkup(
         ${
           art.fillMode === 'image' && art.imageDataUrl
             ? `
-          <pattern id="${patId}" patternUnits="userSpaceOnUse" width="${viewWidth}" height="${viewHeight}">
+          <pattern id="${patId}" patternUnits="userSpaceOnUse" patternContentUnits="userSpaceOnUse" x="${bbox.minX}" y="${bbox.minY}" width="${bbox.width}" height="${bbox.height}">
             <image href="${art.imageDataUrl}" x="${imgX}" y="${imgY}" width="${imgW}" height="${imgH}" preserveAspectRatio="xMidYMid slice" />
           </pattern>
         `

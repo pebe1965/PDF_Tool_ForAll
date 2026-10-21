@@ -1408,6 +1408,11 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       handleUpdateAnnotation({
         ...editingTextArt,
         ...data,
+        // Behalte Größe und Positionierung bei, die der Nutzer auf der Seite manuell angepasst hat
+        width: editingTextArt.width,
+        height: editingTextArt.height,
+        x: editingTextArt.x,
+        y: editingTextArt.y,
       });
       setEditingTextArt(null);
     } else {

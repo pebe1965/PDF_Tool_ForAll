@@ -24,6 +24,7 @@ import {
   Square,
   ArrowUp,
   ArrowDown,
+  Maximize2,
 } from 'lucide-react';
 import {
   TextAnnotation,
@@ -1440,7 +1441,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       let newH = ann.height;
 
       const resizeType = resizeBoxStartPos.type || 'corner';
-      if (ann.type === 'textart' && resizeType === 'corner') {
+      if (ann.type === 'textart' && resizeType === 'corner' && (ann as TextArtAnnotation).stretchToFit === false) {
         const initialAspect =
           (resizeBoxStartPos.initialW * pageWidth) /
           Math.max(1, resizeBoxStartPos.initialH * pageHeight);
@@ -2012,6 +2013,46 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                         <span>Bearbeiten</span>
                       </button>
                     )}
+
+                    {/* Volle Seitenbreite Button */}
+                    <button
+                      onClick={() => {
+                        const fullW = 0.94;
+                        const fullX = 0.03;
+                        onUpdateAnnotation({
+                          ...art,
+                          x: fullX,
+                          width: fullW,
+                        });
+                      }}
+                      className="px-2 py-1 hover:bg-white/20 rounded text-gray-300 hover:text-white flex items-center gap-1 transition"
+                      title="Volle Seitenbreite (94%) zentriert nutzen"
+                    >
+                      <Maximize2 size={13} />
+                      <span className="text-[11px] font-medium hidden sm:inline">Volle Breite</span>
+                    </button>
+
+                    {/* Vollflächig vs Proportional Toggle */}
+                    <button
+                      onClick={() => {
+                        onUpdateAnnotation({
+                          ...art,
+                          stretchToFit: art.stretchToFit === false ? true : false,
+                        });
+                      }}
+                      className={`px-2 py-1 rounded text-[11px] font-semibold transition flex items-center gap-1 ${
+                        art.stretchToFit !== false
+                          ? 'bg-blue-600/90 text-white hover:bg-blue-600 shadow-sm'
+                          : 'text-gray-300 hover:bg-white/20 hover:text-white'
+                      }`}
+                      title={
+                        art.stretchToFit !== false
+                          ? 'Aktuell: Ganze Box ausfüllen (Breite & Höhe) — Klicken für proportional'
+                          : 'Aktuell: Proportional — Klicken um ganze Box (Breite & Höhe) auszufüllen'
+                      }
+                    >
+                      <span>{art.stretchToFit !== false ? 'Vollflächig' : 'Proportional'}</span>
+                    </button>
 
                     <div className="w-[1px] h-3.5 bg-white/20 mx-0.5" />
 

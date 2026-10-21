@@ -10,6 +10,7 @@ import {
   Layers,
   CircleDot,
   RotateCcw,
+  WrapText,
 } from 'lucide-react';
 import { TextArtAnnotation } from '../types/pdf';
 import {
@@ -18,6 +19,7 @@ import {
   getFontFamilyCss,
   buildTextArtSvgMarkup,
   calculateFitToWidthFontSize,
+  getTextArtBoundingBox,
 } from '../lib/textArtHelper';
 
 interface TextArtModalProps {
@@ -64,13 +66,29 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
   const [shadowColor, setShadowColor] = useState<string>(
     initialData?.shadowColor || '#1D1D1F'
   );
+  const [stretchToFit, setStretchToFit] = useState<boolean>(
+    initialData?.stretchToFit !== false
+  );
   const [previewBgDark, setPreviewBgDark] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Ideale Schriftgröße für randlose Skalierung von Seitenrand zu Seitenrand
   const maxFittingSize = calculateFitToWidthFontSize(text, fontFamily, letterSpacing, 720, 250);
-  const sliderMax = Math.max(70, Math.min(220, maxFittingSize));
+
+  // Automatische Zeilenaufteilung (Mehrzeiler) für beste Höhenausnutzung
+  const handleToggleAutoWrap = () => {
+    if (text.includes('\n')) {
+      setText(text.split('\n').join(' ').replace(/\s+/g, ' ').trim());
+    } else {
+      const words = text.trim().split(/\s+/);
+      if (words.length <= 1) return;
+      const mid = Math.ceil(words.length / 2);
+      const line1 = words.slice(0, mid).join(' ');
+      const line2 = words.slice(mid).join(' ');
+      setText(`${line1}\n${line2}`);
+    }
+  };
 
   // Synchronisiere State bei jedem Öffnen oder Objektwechsel
   useEffect(() => {
@@ -101,6 +119,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
       setStrokeColor(initialData.strokeColor || '#000000');
       setHas3dShadow(initialData.has3dShadow ?? true);
       setShadowColor(initialData.shadowColor || '#1D1D1F');
+      setStretchToFit(initialData.stretchToFit !== false);
     } else {
       // Frisches, leeres Design für neues Objekt
       const defaultSize = calculateFitToWidthFontSize('DEIN TEXT', 'Bungee', 0, 720);
@@ -121,6 +140,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
       setStrokeColor('#000000');
       setHas3dShadow(true);
       setShadowColor('#1D1D1F');
+      setStretchToFit(true);
     }
   }, [isOpen, initialData]);
 
@@ -191,28 +211,23 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
     strokeColor,
     has3dShadow,
     shadowColor,
+    stretchToFit,
   };
 
-  const previewSvg = buildTextArtSvgMarkup(currentPreviewArt, 800, 320, 'modal_preview');
+  const previewSvg = buildTextArtSvgMarkup(currentPreviewArt, 800, 320, 'modal_preview', 'meet');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const isMultiLine = text.includes('\n');
-    const autoWidth =
-      curveType === 'circle'
-        ? 0.48
-        : Math.min(0.85, Math.max(0.48, 0.50 + (fontSize / 220) * 0.30));
-    const autoHeight =
-      curveType === 'circle'
-        ? 0.38
-        : isMultiLine
-        ? 0.28
-        : 0.18;
+    const bbox = getTextArtBoundingBox(currentPreviewArt, fontSize);
+    const aspect = Math.max(0.4, bbox.width / bbox.height);
+    const defaultAutoW = 0.65;
+    const defaultAutoH = Math.min(0.45, Math.max(0.12, (defaultAutoW * 0.72) / aspect));
 
     onInsert({
       type: 'textart',
-      width: autoWidth,
-      height: autoHeight,
+      // Vorhandene Dimensionen bei Bearbeitung immer exakt erhalten!
+      width: initialData?.width ?? defaultAutoW,
+      height: initialData?.height ?? defaultAutoH,
       text: text.trim() || 'TextArt',
       fontFamily,
       fontSize,
@@ -230,6 +245,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
       strokeColor,
       has3dShadow,
       shadowColor,
+      stretchToFit,
     });
     onClose();
   };
@@ -287,12 +303,25 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
           </div>
 
           {/* Text Input (Mehrzeilig mit Enter unterstützt) */}
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <div className="flex justify-between items-center text-xs font-semibold text-gray-700">
               <label>Dein Text (Mehrzeilig unterstützt)</label>
-              <span className="text-[11px] font-normal text-gray-500">
-                Drücke <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded font-mono text-[10px]">Enter</kbd> für eine 2. Zeile
-              </span>
+              <div className="flex items-center gap-2">
+                {text.trim().split(/\s+/).length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleToggleAutoWrap}
+                    className="text-[11px] font-semibold text-[#0071E3] hover:text-blue-700 flex items-center gap-1 transition bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200"
+                    title="Teilt Wörter auf 2 Zeilen auf oder verbindet sie wieder"
+                  >
+                    <WrapText size={12} />
+                    <span>{text.includes('\n') ? 'In 1 Zeile vereinen' : '↩️ In 2 Zeilen aufteilen'}</span>
+                  </button>
+                )}
+                <span className="text-[11px] font-normal text-gray-500">
+                  Drücke <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded font-mono text-[10px]">Enter</kbd> für eine 2. Zeile
+                </span>
+              </div>
             </div>
             <textarea
               rows={2}
@@ -302,6 +331,12 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
               className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#0071E3] font-bold text-base resize-none"
               maxLength={120}
             />
+            <div className="text-[11px] text-gray-600 bg-amber-50/90 border border-amber-200/80 rounded-xl px-3 py-1.5 flex items-center gap-2">
+              <span className="text-amber-600 font-bold">💡 Tipp:</span>
+              <span>
+                Drücke <kbd className="px-1 py-0.2 bg-white border border-amber-300 rounded font-mono text-[10px]">Enter</kbd> für eine 2. Zeile — Mehrzeiliger Text füllt die Höhe perfekt aus und bringt Foto-Masken besonders groß und spektakulär zur Geltung!
+              </span>
+            </div>
           </div>
 
           {/* 1-Click Presets */}
@@ -435,8 +470,8 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                 </div>
                 <input
                   type="range"
-                  min="14"
-                  max={sliderMax}
+                  min="16"
+                  max="220"
                   step="1"
                   value={fontSize}
                   onChange={(e) => setFontSize(Number(e.target.value))}
@@ -445,17 +480,17 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                 <div className="flex items-center justify-between text-[10px] text-gray-500 px-0.5">
                   <button
                     type="button"
-                    onClick={() => setFontSize(Math.max(14, Math.round(maxFittingSize * 0.5)))}
+                    onClick={() => setFontSize(32)}
                     className="hover:text-blue-600 transition"
                   >
-                    Kompakt ({Math.max(14, Math.round(maxFittingSize * 0.5))}px)
+                    Kompakt (32px)
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFontSize(Math.max(16, Math.round(maxFittingSize * 0.75)))}
+                    onClick={() => setFontSize(60)}
                     className="hover:text-blue-600 transition"
                   >
-                    Mittel ({Math.max(16, Math.round(maxFittingSize * 0.75))}px)
+                    Mittel (60px)
                   </button>
                   <button
                     type="button"
@@ -466,10 +501,42 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFontSize(sliderMax)}
+                    onClick={() => setFontSize(110)}
                     className="hover:text-blue-600 transition"
                   >
-                    Maximal ({sliderMax}px)
+                    Extra Groß (110px)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFontSize(220)}
+                    className="hover:text-blue-600 transition"
+                  >
+                    Max (220px)
+                  </button>
+                </div>
+              </div>
+
+              {/* Format & Seiten-Einpassung */}
+              <div className="space-y-1.5 bg-gray-50 p-3 rounded-2xl border border-gray-200">
+                <div className="flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-semibold text-gray-700">Seiten-Einpassung</span>
+                    <p className="text-[11px] text-gray-500">
+                      {stretchToFit
+                        ? 'Vollflächig: Schrift nutzt die volle Breite und Länge des Rahmens aus.'
+                        : 'Proportional: Schrift behält ihr festes Seitenverhältnis bei.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setStretchToFit(!stretchToFit)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                      stretchToFit
+                        ? 'bg-[#0071E3] text-white shadow-sm hover:bg-blue-600'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    <span>{stretchToFit ? '✓ Ganze Breite & Länge' : 'Proportional'}</span>
                   </button>
                 </div>
               </div>

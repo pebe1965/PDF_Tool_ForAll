@@ -111,6 +111,7 @@ export interface TextArtAnnotation {
   letterSpacing?: number; // in px
   shadowColor?: string;
   has3dShadow?: boolean;
+  stretchToFit?: boolean; // true = fill full box (width & height), false = preserve aspect ratio
 }
 
 export type Annotation =
