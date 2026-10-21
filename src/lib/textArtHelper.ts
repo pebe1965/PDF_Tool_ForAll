@@ -117,7 +117,8 @@ export const TEXTART_PRESETS: TextArtPreset[] = [
     description: 'Das Foto füllt die dicken Buchstaben aus – Schablonen-Effekt',
     previewGradient: 'linear-gradient(135deg, #3B82F6 0%, #10B981 50%, #F59E0B 100%)',
     data: {
-      fontFamily: 'Impact',
+      fontFamily: 'Bungee',
+      fontSize: 68,
       curveType: 'flat',
       bend: 0,
       fillMode: 'image',
@@ -140,6 +141,11 @@ export const GRADIENT_DEFS: Record<string, string[]> = {
 };
 
 export function getFontFamilyCss(family?: string): string {
+  if (family === 'Bungee') return 'Bungee, "Arial Black", Impact, sans-serif';
+  if (family === 'Anton') return 'Anton, "Arial Black", Impact, sans-serif';
+  if (family === 'Alfa Slab One') return '"Alfa Slab One", Impact, serif';
+  if (family === 'Archivo Black') return '"Archivo Black", "Arial Black", sans-serif';
+  if (family === 'Paytone One') return '"Paytone One", sans-serif';
   if (family === 'Times') return '"Times New Roman", Times, Georgia, serif';
   if (family === 'Courier') return '"Courier New", Courier, monospace';
   if (family === 'Impact') return 'Impact, "Arial Black", sans-serif';
@@ -154,43 +160,75 @@ export function getFontFamilyCss(family?: string): string {
 
 /**
  * Generates an SVG path definition based on curveType and bend (-100 to +100)
- * Bounding coordinate space is 800 x 320 with plenty of headroom
+ * Bounding coordinate space is 800 x 320 with true circular curvature so short words bend visibly
  */
-export function getSvgPathD(curveType: TextArtAnnotation['curveType'], bend: number): string {
+export function getSvgPathD(
+  curveType: TextArtAnnotation['curveType'],
+  bend: number,
+  lineIndex = 0,
+  totalLines = 1,
+  fontSize = 54
+): string {
   const normBend = Math.max(5, Math.min(100, Math.abs(bend)));
   const intensity = normBend / 100;
+  const lineSpacing = fontSize * 1.15;
+  const lineOffset = (lineIndex - (totalLines - 1) / 2) * lineSpacing;
 
   switch (curveType) {
     case 'arc-up': {
-      // Middle arcs up (smaller Y), ends point down
-      const startY = 245 + intensity * 15;
-      const endY = 245 + intensity * 15;
-      const midY = 245 - intensity * 145;
-      return `M 40,${startY} Q 400,${midY} 760,${endY}`;
+      // True circular/elliptical arch that visibly curls letters at any word length
+      // Radius tightens as bend increases: from 450 (gentle) to 130 (tight dome)
+      const R = Math.max(120, 420 - intensity * 290) + lineOffset;
+      // Arc angle expands with bend: from 25deg (gentle) to 150deg (dramatic arch)
+      const arcAngleRad = (Math.PI / 180) * (20 + intensity * 130);
+      const cx = 400;
+      const cy = 160 + R * Math.cos(arcAngleRad / 2) - lineOffset;
+
+      const startAngle = -Math.PI / 2 - arcAngleRad / 2;
+      const endAngle = -Math.PI / 2 + arcAngleRad / 2;
+
+      const x1 = cx + R * Math.cos(startAngle);
+      const y1 = cy + R * Math.sin(startAngle);
+      const x2 = cx + R * Math.cos(endAngle);
+      const y2 = cy + R * Math.sin(endAngle);
+
+      return `M ${x1.toFixed(1)},${y1.toFixed(1)} A ${R.toFixed(1)},${R.toFixed(1)} 0 0,1 ${x2.toFixed(1)},${y2.toFixed(1)}`;
     }
     case 'arc-down': {
-      // Middle dips down (larger Y), ends point up
-      const startY = 85 - intensity * 15;
-      const endY = 85 - intensity * 15;
-      const midY = 85 + intensity * 145;
-      return `M 40,${startY} Q 400,${midY} 760,${endY}`;
-    }
-    case 'wave': {
-      // S-curve wave
-      const waveH = intensity * 75;
-      return `M 40,160 Q 220,${160 - waveH} 400,160 T 760,160`;
+      // True smiling downward arc
+      const R = Math.max(120, 420 - intensity * 290) - lineOffset;
+      const arcAngleRad = (Math.PI / 180) * (20 + intensity * 130);
+      const cx = 400;
+      const cy = 160 - R * Math.cos(arcAngleRad / 2) + lineOffset;
+
+      const startAngle = Math.PI / 2 - arcAngleRad / 2;
+      const endAngle = Math.PI / 2 + arcAngleRad / 2;
+
+      const x1 = cx + R * Math.cos(startAngle);
+      const y1 = cy + R * Math.sin(startAngle);
+      const x2 = cx + R * Math.cos(endAngle);
+      const y2 = cy + R * Math.sin(endAngle);
+
+      return `M ${x1.toFixed(1)},${y1.toFixed(1)} A ${R.toFixed(1)},${R.toFixed(1)} 0 0,0 ${x2.toFixed(1)},${y2.toFixed(1)}`;
     }
     case 'circle': {
-      // Upper half circle / arch for seals and circular stamps
-      // Generous radius and arc length so full words fit without cutoffs
-      const r = Math.max(160, 240 - intensity * 60);
+      // Upper ring for seal / circular emblem
+      const R = Math.max(130, 240 - intensity * 80) + lineOffset;
       const cx = 400;
-      const cy = 275;
-      return `M ${cx - r},${cy - 20} A ${r},${r} 0 0,1 ${cx + r},${cy - 20}`;
+      const cy = 250;
+      return `M ${(cx - R).toFixed(1)},${cy} A ${R.toFixed(1)},${R.toFixed(1)} 0 0,1 ${(cx + R).toFixed(1)},${cy}`;
+    }
+    case 'wave': {
+      // Smooth sinusoidal wave
+      const waveH = intensity * 75;
+      const midY = 160 + lineOffset;
+      return `M 40,${midY} Q 220,${midY - waveH} 400,${midY} T 760,${midY}`;
     }
     case 'flat':
-    default:
-      return `M 40,160 L 760,160`;
+    default: {
+      const lineY = 160 + lineOffset;
+      return `M 40,${lineY} L 760,${lineY}`;
+    }
   }
 }
 
@@ -203,18 +241,22 @@ export function buildTextArtSvgMarkup(
   viewHeight = 320,
   uniqueId = `art_${Date.now()}`
 ): string {
-  const pathD = getSvgPathD(art.curveType, art.bend);
-  const pathId = `path_${uniqueId}`;
-  const gradId = `grad_${uniqueId}`;
-  const patId = `pat_${uniqueId}`;
+  // Support multi-line text (e.g. "NOTIONARY\nATLAS" or "NEW YORK\nCITY")
+  const rawText = art.text ?? 'TextArt';
+  const rawLines = rawText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  const lines = rawLines.length > 0 ? rawLines : ['TextArt'];
 
-  // Font size calculation: scale text nicely according to character count or user setting
-  const textLen = (art.text || 'TextArt').length;
-  const baseSize = textLen > 25 ? 28 : textLen > 18 ? 34 : textLen > 12 ? 42 : textLen > 7 ? 50 : 60;
-  const effectiveSize = art.fontSize || baseSize;
+  const maxLineLen = Math.max(...lines.map((l) => l.length));
+  // Smart default font size if not set:
+  const baseSize = maxLineLen > 25 ? 28 : maxLineLen > 18 ? 36 : maxLineLen > 10 ? 48 : maxLineLen > 5 ? 64 : 84;
+  const effectiveSize = art.fontSize || (lines.length > 1 ? Math.min(baseSize, 56) : baseSize);
   const fontFamilyCss = getFontFamilyCss(art.fontFamily);
   const strokeW = art.strokeWidth || 0;
   const strokeC = art.strokeColor || '#000000';
+  const letterSpacing = art.letterSpacing || 0;
+
+  const gradId = `grad_${uniqueId}`;
+  const patId = `pat_${uniqueId}`;
 
   let fillAttr = art.color || '#0071E3';
   if (art.fillMode === 'gradient') {
@@ -231,10 +273,94 @@ export function buildTextArtSvgMarkup(
   const imgX = ((art.imageOffsetX || 0) / 100) * viewWidth + (viewWidth - imgW) / 2;
   const imgY = ((art.imageOffsetY || 0) / 100) * viewHeight + (viewHeight - imgH) / 2;
 
+  // Build path defs for each line
+  const pathsDef = lines
+    .map((_, i) => {
+      const d = getSvgPathD(art.curveType, art.bend, i, lines.length, effectiveSize);
+      return `<path id="path_${uniqueId}_${i}" d="${d}" fill="none" />`;
+    })
+    .join('\n');
+
+  // Build 3D Shadow Layers (for each line)
+  const shadowMarkup = art.has3dShadow
+    ? [5, 4, 3, 2, 1]
+        .map((step) =>
+          lines
+            .map(
+              (_, i) => `
+          <text
+            font-family='${fontFamilyCss}'
+            font-size="${effectiveSize}"
+            font-weight="900"
+            letter-spacing="${letterSpacing}px"
+            text-anchor="middle"
+            fill="${art.shadowColor || '#1D1D1F'}"
+            opacity="${0.18 + step * 0.12}"
+            dx="${step * 1.5}"
+            dy="${step * 1.5}"
+          >
+            <textPath href="#path_${uniqueId}_${i}" startOffset="50%">
+              ${escapeXml(lines[i])}
+            </textPath>
+          </text>
+        `
+            )
+            .join('')
+        )
+        .join('')
+    : '';
+
+  // Build stroke outlines (for each line)
+  const strokeMarkup =
+    strokeW > 0
+      ? lines
+          .map(
+            (_, i) => `
+        <text
+          font-family='${fontFamilyCss}'
+          font-size="${effectiveSize}"
+          font-weight="900"
+          letter-spacing="${letterSpacing}px"
+          text-anchor="middle"
+          fill="none"
+          stroke="${strokeC}"
+          stroke-width="${strokeW * 2.5}"
+          stroke-linejoin="round"
+          stroke-linecap="round"
+        >
+          <textPath href="#path_${uniqueId}_${i}" startOffset="50%">
+            ${escapeXml(lines[i])}
+          </textPath>
+        </text>
+      `
+          )
+          .join('')
+      : '';
+
+  // Build main text lines (all filled with gradient or image pattern)
+  const mainTextMarkup = lines
+    .map(
+      (_, i) => `
+      <text
+        font-family='${fontFamilyCss}'
+        font-size="${effectiveSize}"
+        font-weight="900"
+        letter-spacing="${letterSpacing}px"
+        text-anchor="middle"
+        fill="${fillAttr}"
+      >
+        <textPath href="#path_${uniqueId}_${i}" startOffset="50%">
+          ${escapeXml(lines[i])}
+        </textPath>
+      </text>
+    `
+    )
+    .join('');
+
   return `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewWidth} ${viewHeight}" width="100%" height="100%" overflow="visible" style="overflow: visible;">
       <defs>
-        <path id="${pathId}" d="${pathD}" fill="none" />
+        ${pathsDef}
         ${
           art.fillMode === 'gradient'
             ? `
@@ -257,67 +383,9 @@ export function buildTextArtSvgMarkup(
         }
       </defs>
 
-      <!-- 3D Retro Shadow Extrusion -->
-      ${
-        art.has3dShadow
-          ? [5, 4, 3, 2, 1]
-              .map(
-                (step) => `
-          <text
-            font-family='${fontFamilyCss}'
-            font-size="${effectiveSize}"
-            font-weight="900"
-            text-anchor="middle"
-            fill="${art.shadowColor || '#1D1D1F'}"
-            opacity="${0.18 + step * 0.12}"
-            dx="${step * 1.5}"
-            dy="${step * 1.5}"
-          >
-            <textPath href="#${pathId}" startOffset="50%">
-              ${escapeXml(art.text)}
-            </textPath>
-          </text>
-        `
-              )
-              .join('')
-          : ''
-      }
-
-      <!-- Main Text Outline (if stroke enabled) -->
-      ${
-        strokeW > 0
-          ? `
-        <text
-          font-family='${fontFamilyCss}'
-          font-size="${effectiveSize}"
-          font-weight="900"
-          text-anchor="middle"
-          fill="none"
-          stroke="${strokeC}"
-          stroke-width="${strokeW * 2.5}"
-          stroke-linejoin="round"
-          stroke-linecap="round"
-        >
-          <textPath href="#${pathId}" startOffset="50%">
-            ${escapeXml(art.text)}
-          </textPath>
-        </text>
-      `
-          : ''
-      }
-
-      <!-- Main Text Body -->
-      <text
-        font-family='${fontFamilyCss}'
-        font-size="${effectiveSize}"
-        font-weight="900"
-        text-anchor="middle"
-        fill="${fillAttr}"
-      >
-        <textPath href="#${pathId}" startOffset="50%">
-          ${escapeXml(art.text)}
-        </textPath>
-      </text>
+      ${shadowMarkup}
+      ${strokeMarkup}
+      ${mainTextMarkup}
     </svg>
   `;
 }
@@ -339,6 +407,14 @@ export async function renderTextArtToPngBytes(
   widthPt: number,
   heightPt: number
 ): Promise<ArrayBuffer> {
+  if (typeof document !== 'undefined' && document.fonts?.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // ignore
+    }
+  }
+
   const scale = 3;
   const w = Math.max(160, Math.round(widthPt * scale));
   const h = Math.max(80, Math.round(heightPt * scale));

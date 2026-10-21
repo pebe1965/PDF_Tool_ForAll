@@ -108,6 +108,7 @@ export interface TextArtAnnotation {
   imageScale?: number; // 0.5 to 3.0
   strokeColor?: string;
   strokeWidth?: number; // 0 = none
+  letterSpacing?: number; // in px
   shadowColor?: string;
   has3dShadow?: boolean;
 }

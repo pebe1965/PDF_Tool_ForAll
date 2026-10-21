@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   Sparkles,
@@ -33,10 +33,11 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
   initialData,
 }) => {
   const [text, setText] = useState<string>(initialData?.text || 'NOTIONARY ATLAS');
-  const [fontFamily, setFontFamily] = useState<string>(initialData?.fontFamily || 'Impact');
-  const [fontSize, setFontSize] = useState<number>(initialData?.fontSize || 48);
+  const [fontFamily, setFontFamily] = useState<string>(initialData?.fontFamily || 'Bungee');
+  const [fontSize, setFontSize] = useState<number>(initialData?.fontSize || 68);
+  const [letterSpacing, setLetterSpacing] = useState<number>(initialData?.letterSpacing ?? 0);
   const [curveType, setCurveType] = useState<TextArtAnnotation['curveType']>(
-    initialData?.curveType || 'arc-up'
+    initialData?.curveType || 'flat'
   );
   const [bend, setBend] = useState<number>(initialData?.bend ?? 40);
   const [fillMode, setFillMode] = useState<TextArtAnnotation['fillMode']>(
@@ -66,6 +67,49 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Synchronisiere State bei jedem Öffnen oder Objektwechsel
+  useEffect(() => {
+    if (!isOpen) return;
+    if (initialData) {
+      setText(initialData.text || '');
+      setFontFamily(initialData.fontFamily || 'Bungee');
+      setFontSize(initialData.fontSize || 68);
+      setLetterSpacing(initialData.letterSpacing ?? 0);
+      setCurveType(initialData.curveType || 'flat');
+      setBend(initialData.bend ?? 40);
+      setFillMode(initialData.fillMode || 'gradient');
+      setColor(initialData.color || '#0071E3');
+      setGradientPreset(initialData.gradientPreset || 'gold');
+      setImageDataUrl(initialData.imageDataUrl);
+      setImageOffsetX(initialData.imageOffsetX ?? 0);
+      setImageOffsetY(initialData.imageOffsetY ?? 0);
+      setImageScale(initialData.imageScale ?? 1.0);
+      setStrokeWidth(initialData.strokeWidth ?? 1);
+      setStrokeColor(initialData.strokeColor || '#000000');
+      setHas3dShadow(initialData.has3dShadow ?? true);
+      setShadowColor(initialData.shadowColor || '#1D1D1F');
+    } else {
+      // Frisches, leeres Design für neues Objekt
+      setText('DEIN TEXT');
+      setFontFamily('Bungee');
+      setFontSize(68);
+      setLetterSpacing(0);
+      setCurveType('flat');
+      setBend(40);
+      setFillMode('gradient');
+      setColor('#0071E3');
+      setGradientPreset('gold');
+      setImageDataUrl(undefined);
+      setImageOffsetX(0);
+      setImageOffsetY(0);
+      setImageScale(1.0);
+      setStrokeWidth(1);
+      setStrokeColor('#000000');
+      setHas3dShadow(true);
+      setShadowColor('#1D1D1F');
+    }
+  }, [isOpen, initialData]);
+
   if (!isOpen) return null;
 
   // Apply a preset
@@ -74,6 +118,8 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
     if (!preset) return;
     const d = preset.data;
     if (d.fontFamily) setFontFamily(d.fontFamily);
+    if (d.fontSize !== undefined) setFontSize(d.fontSize);
+    if (d.letterSpacing !== undefined) setLetterSpacing(d.letterSpacing);
     if (d.curveType) setCurveType(d.curveType);
     if (d.bend !== undefined) setBend(d.bend);
     if (d.fillMode) setFillMode(d.fillMode);
@@ -114,9 +160,10 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
     y: 0,
     width: 0.65,
     height: 0.24,
-    text: text.trim() || 'TextArt',
+    text: text || 'TextArt',
     fontFamily,
     fontSize,
+    letterSpacing,
     curveType,
     bend,
     fillMode,
@@ -136,13 +183,25 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    const lineCount = Math.max(1, lines.length);
+    const autoWidth =
+      curveType === 'circle'
+        ? 0.48
+        : Math.min(0.85, Math.max(0.48, 0.45 + (fontSize / 200) * 0.28));
+    const autoHeight =
+      curveType === 'circle'
+        ? 0.40
+        : Math.min(0.55, 0.16 + (lineCount - 1) * 0.12 + (fontSize / 200) * 0.12);
+
     onInsert({
       type: 'textart',
-      width: curveType === 'circle' ? 0.48 : 0.65,
-      height: curveType === 'circle' ? 0.36 : 0.24,
+      width: autoWidth,
+      height: autoHeight,
       text: text.trim() || 'TextArt',
       fontFamily,
       fontSize,
+      letterSpacing,
       curveType,
       bend,
       fillMode,
@@ -172,7 +231,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
             <div>
               <h2 className="text-lg font-bold">TextArt & WordArt Studio</h2>
               <p className="text-xs text-white/80">
-                Gebogene Schriftzüge, 3D-WordArt, Farbverläufe & Foto-im-Text
+                Gebogene Schriftzüge, 3D-WordArt, Farbverläufe, Mehrzeiler & Foto-Maske
               </p>
             </div>
           </div>
@@ -212,16 +271,21 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
             </div>
           </div>
 
-          {/* Text Input */}
+          {/* Text Input (Mehrzeilig mit Enter unterstützt) */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-gray-700">Dein Text</label>
-            <input
-              type="text"
+            <div className="flex justify-between items-center text-xs font-semibold text-gray-700">
+              <label>Dein Text (Mehrzeilig unterstützt)</label>
+              <span className="text-[11px] font-normal text-gray-500">
+                Drücke <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded font-mono text-[10px]">Enter</kbd> für eine 2. Zeile
+              </span>
+            </div>
+            <textarea
+              rows={2}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Text eingeben..."
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#0071E3] font-semibold text-base"
-              maxLength={60}
+              placeholder="Z. B. NEW YORK&#10;CITY"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#0071E3] font-bold text-base resize-none"
+              maxLength={120}
             />
           </div>
 
@@ -284,7 +348,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
               {curveType !== 'flat' && (
                 <div className="space-y-1.5 bg-gray-50 p-3 rounded-2xl border border-gray-200">
                   <div className="flex justify-between text-xs">
-                    <span className="font-medium text-gray-700">Biegestärke</span>
+                    <span className="font-medium text-gray-700">Biegestärke (Krümmung)</span>
                     <span className="font-bold text-[#0071E3]">{bend} %</span>
                   </div>
                   <input
@@ -306,16 +370,21 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                   onChange={(e) => setFontFamily(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#0071E3] bg-white text-xs font-medium"
                 >
-                  <optgroup label="Plakat & Fett (Ideal für Masken & 3D)">
-                    <option value="Impact">Impact (Ultra Bold)</option>
+                  <optgroup label="Extrem Massiv & Poster (Ideal für Foto-Masken & 3D)">
+                    <option value="Bungee">Bungee (Extrem Breit & Massiv – Perfekt für Fotos)</option>
+                    <option value="Anton">Anton (Plakat / Hoch & Extra Fett)</option>
+                    <option value="Alfa Slab One">Alfa Slab One (Wuchtige Serifenschrift)</option>
+                    <option value="Archivo Black">Archivo Black (Modern & Extra Kräftig)</option>
+                    <option value="Paytone One">Paytone One (Dynamisch & Fett)</option>
+                    <option value="Impact">Impact (Klassisch Fett)</option>
                     <option value="Arial Black">Arial Black (Massiv)</option>
                     <option value="Montserrat">Montserrat (Modern Fett)</option>
                   </optgroup>
                   <optgroup label="Schreibschrift & Handschrift">
-                    <option value="Dancing Script">Dancing Script (Schwungvoll)</option>
-                    <option value="Caveat">Caveat (Handgeschrieben)</option>
+                    <option value="Dancing Script">Dancing Script (Schwungvoll & Elegant)</option>
+                    <option value="Caveat">Caveat (Kreative Handschrift)</option>
                   </optgroup>
-                  <optgroup label="Design & Luxus">
+                  <optgroup label="Design & Urkunden">
                     <option value="Playfair Display">Playfair Display (Klassische Serife)</option>
                     <option value="Cinzel">Cinzel (Römisch / Monumental)</option>
                   </optgroup>
@@ -326,7 +395,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                 </select>
               </div>
 
-              {/* Schriftgröße stufenlos */}
+              {/* Schriftgröße stufenlos bis 180px */}
               <div className="space-y-1.5 bg-gray-50 p-3 rounded-2xl border border-gray-200">
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-semibold text-gray-700">Schriftgröße</span>
@@ -337,7 +406,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                 <input
                   type="range"
                   min="16"
-                  max="96"
+                  max="180"
                   step="1"
                   value={fontSize}
                   onChange={(e) => setFontSize(Number(e.target.value))}
@@ -346,24 +415,80 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                 <div className="flex items-center justify-between text-[10px] text-gray-500 px-0.5">
                   <button
                     type="button"
-                    onClick={() => setFontSize(28)}
+                    onClick={() => setFontSize(36)}
                     className="hover:text-blue-600 transition"
                   >
-                    Klein (28px)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFontSize(46)}
-                    className="hover:text-blue-600 transition"
-                  >
-                    Mittel (46px)
+                    Klein (36px)
                   </button>
                   <button
                     type="button"
                     onClick={() => setFontSize(68)}
                     className="hover:text-blue-600 transition"
                   >
-                    Groß (68px)
+                    Mittel (68px)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFontSize(110)}
+                    className="hover:text-blue-600 transition"
+                  >
+                    Groß (110px)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFontSize(150)}
+                    className="hover:text-blue-600 transition"
+                  >
+                    Plakat (150px)
+                  </button>
+                </div>
+              </div>
+
+              {/* Buchstaben-Abstand */}
+              <div className="space-y-1.5 bg-gray-50 p-3 rounded-2xl border border-gray-200">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-gray-700">Buchstaben-Abstand</span>
+                  <span className="font-bold text-[#0071E3] bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200">
+                    {letterSpacing} px
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-2"
+                  max="30"
+                  step="1"
+                  value={letterSpacing}
+                  onChange={(e) => setLetterSpacing(Number(e.target.value))}
+                  className="w-full accent-[#0071E3]"
+                />
+                <div className="flex items-center justify-between text-[10px] text-gray-500 px-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setLetterSpacing(0)}
+                    className="hover:text-blue-600 transition"
+                  >
+                    Normal (0)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLetterSpacing(6)}
+                    className="hover:text-blue-600 transition"
+                  >
+                    Leicht (+6)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLetterSpacing(14)}
+                    className="hover:text-blue-600 transition"
+                  >
+                    Weit (+14)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLetterSpacing(24)}
+                    className="hover:text-blue-600 transition"
+                  >
+                    Plakat (+24)
                   </button>
                 </div>
               </div>
