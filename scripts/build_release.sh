@@ -45,13 +45,40 @@ cat << 'EOF' > "$APP_BUNDLE/Contents/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.13.0</string>
+    <string>1.13.1</string>
     <key>CFBundleVersion</key>
-    <string>1.13.0</string>
+    <string>1.13.1</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>pdftool</string>
+            </array>
+            <key>CFBundleTypeName</key>
+            <string>PDF Tool Project</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+        </dict>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>pdf</string>
+            </array>
+            <key>CFBundleTypeName</key>
+            <string>PDF Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+        </dict>
+    </array>
 </dict>
 </plist>
 EOF

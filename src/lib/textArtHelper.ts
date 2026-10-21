@@ -498,9 +498,33 @@ export function buildTextArtSvgMarkup(
           text-anchor="middle"
           fill="none"
           stroke="${strokeC}"
-          stroke-width="${strokeW * 2.5}"
+          stroke-width="${strokeW * 2}"
           stroke-linejoin="round"
           stroke-linecap="round"
+        >
+          <textPath href="#path_${uniqueId}_${i}" startOffset="50%" text-anchor="middle">
+            ${escapeXml(lines[i])}
+          </textPath>
+        </text>
+      `
+          )
+          .join('')
+      : '';
+
+  // Base solid fill ensuring inner stroke is covered identically on all lines (never leaving double-thick exposed borders)
+  const baseFillColor = art.fillMode === 'image' ? (art.color || '#1D1D1F') : 'transparent';
+  const baseFillMarkup =
+    strokeW > 0 || art.fillMode === 'image'
+      ? lines
+          .map(
+            (_, i) => `
+        <text
+          font-family='${fontFamilyCss}'
+          font-size="${effectiveSize}"
+          font-weight="900"
+          letter-spacing="${letterSpacing}px"
+          text-anchor="middle"
+          fill="${baseFillColor}"
         >
           <textPath href="#path_${uniqueId}_${i}" startOffset="50%" text-anchor="middle">
             ${escapeXml(lines[i])}
@@ -559,6 +583,7 @@ export function buildTextArtSvgMarkup(
           art.fillMode === 'image' && art.imageDataUrl
             ? `
           <pattern id="${patId}" patternUnits="userSpaceOnUse" patternContentUnits="userSpaceOnUse" x="${bbox.minX}" y="${bbox.minY}" width="${bbox.width}" height="${bbox.height}">
+            <rect x="${bbox.minX}" y="${bbox.minY}" width="${bbox.width}" height="${bbox.height}" fill="${art.color || '#1D1D1F'}" />
             <image href="${art.imageDataUrl}" x="${imgX}" y="${imgY}" width="${imgW}" height="${imgH}" preserveAspectRatio="xMidYMid slice" />
           </pattern>
         `
@@ -568,6 +593,7 @@ export function buildTextArtSvgMarkup(
 
       ${shadowMarkup}
       ${strokeMarkup}
+      ${baseFillMarkup}
       ${mainTextMarkup}
     </svg>
   `;

@@ -177,10 +177,17 @@ export async function importProjectFile(file: File): Promise<{
   documentTitle: string;
   currentPage: number;
 }> {
-  const text = await file.text();
-  const payload = JSON.parse(text) as ProjectFilePayload;
+  const rawText = await file.text();
+  const text = rawText.replace(/^\uFEFF/, '').trim();
+  let payload: ProjectFilePayload;
+  try {
+    payload = JSON.parse(text) as ProjectFilePayload;
+  } catch (_e) {
+    throw new Error('Die .pdftool-Projektdatei ist ungültig oder beschädigt (kein JSON-Format).');
+  }
+
   if (!payload || payload.format !== 'PDF_TOOL_FORALL_PROJECT_V1' || !payload.pdfBase64) {
-    throw new Error('Ungültige .pdftool Projektdatei.');
+    throw new Error('Ungültiges Projektdateiformat: Es handelt sich nicht um eine gültige .pdftool-Datei.');
   }
   return {
     pdfBytes: base64ToArrayBuffer(payload.pdfBase64),

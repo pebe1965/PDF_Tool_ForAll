@@ -447,7 +447,9 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
   // Handle PDF or .pdftool file selection
   const handleFileChange = async (selectedFile: File) => {
-    if (selectedFile.name.endsWith('.pdftool')) {
+    const isProject = selectedFile.name.toLowerCase().endsWith('.pdftool');
+
+    if (isProject) {
       setLoading(true);
       try {
         const imported = await importProjectFile(selectedFile);
@@ -461,6 +463,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         setUndoStack([]);
         setRedoStack([]);
         await reloadPdfFromBuffer(imported.pdfBytes, imported.currentPage);
+        onGoToEditor?.();
       } catch (err: any) {
         alert(err?.message || 'Projektdatei konnte nicht geladen werden.');
       } finally {
@@ -485,6 +488,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       setUndoStack([]);
       setRedoStack([]);
       await reloadPdfFromBuffer(buffer, 1);
+      onGoToEditor?.();
     } catch (err) {
       console.error('Fehler beim Laden der PDF:', err);
       alert('Die PDF konnte nicht geladen werden.');
@@ -1490,13 +1494,32 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       } else {
         handleInsertImageFile(droppedFile, droppedFile.name);
       }
-    } else if (droppedFile.type === 'application/pdf' || droppedFile.name.endsWith('.pdftool')) {
+    } else if (
+      droppedFile.type === 'application/pdf' ||
+      droppedFile.name.toLowerCase().endsWith('.pdf') ||
+      droppedFile.name.toLowerCase().endsWith('.pdftool')
+    ) {
       handleFileChange(droppedFile);
     }
   };
 
   return (
     <div className="flex flex-col h-[calc(100vh-68px)] overflow-hidden bg-[#F5F5F7]">
+      {/* Zentraler Dateiauswahldialog (immer gemountet, damit er aus allen Ansichten funktioniert) */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.pdftool,application/pdf,application/json,*"
+        className="hidden"
+        onClick={(e) => e.stopPropagation()}
+        onChange={async (e) => {
+          if (e.target.files?.[0]) {
+            await handleFileChange(e.target.files[0]);
+          }
+          e.target.value = '';
+        }}
+      />
+
       {isHomeView || !file ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
           {/* Active Workspace Document Banner */}
@@ -1662,21 +1685,6 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
               </button>
             </div>
           </div>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="application/pdf,.pdf,.pdftool"
-            className="hidden"
-            onClick={(e) => e.stopPropagation()}
-            onChange={async (e) => {
-              if (e.target.files?.[0]) {
-                await handleFileChange(e.target.files[0]);
-                onGoToEditor?.();
-              }
-              e.target.value = '';
-            }}
-          />
         </div>
       ) : (
         <>
