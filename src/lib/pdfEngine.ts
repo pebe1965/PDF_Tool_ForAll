@@ -145,7 +145,9 @@ async function renderShapeToPngBytes(
   color: string,
   widthPt: number,
   heightPt: number,
-  strokeWidth: number = 3
+  strokeWidth: number = 2,
+  isFilled: boolean = false,
+  fillColor?: string
 ): Promise<ArrayBuffer> {
   const scale = 3;
   const w = Math.max(48, Math.round(widthPt * scale));
@@ -155,20 +157,23 @@ async function renderShapeToPngBytes(
   canvas.height = h;
   const ctx = canvas.getContext('2d')!;
   ctx.strokeStyle = color || '#0071E3';
-  ctx.fillStyle = color || '#0071E3';
-  ctx.lineWidth = Math.max(2, strokeWidth * scale);
+  ctx.fillStyle = fillColor || color || '#0071E3';
+  const effectiveStroke = strokeWidth > 0 ? Math.max(1, strokeWidth * scale) : 0;
+  ctx.lineWidth = effectiveStroke;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  const pad = ctx.lineWidth;
+  const pad = effectiveStroke > 0 ? effectiveStroke / 2 : 0;
 
   if (shapeType === 'check') {
+    ctx.lineWidth = Math.max(2, (strokeWidth || 3) * scale * 1.2);
     ctx.beginPath();
     ctx.moveTo(w * 0.16, h * 0.54);
     ctx.lineTo(w * 0.42, h * 0.8);
     ctx.lineTo(w * 0.85, h * 0.2);
     ctx.stroke();
   } else if (shapeType === 'cross') {
+    ctx.lineWidth = Math.max(2, (strokeWidth || 3) * scale * 1.2);
     ctx.beginPath();
     ctx.moveTo(w * 0.2, h * 0.2);
     ctx.lineTo(w * 0.8, h * 0.8);
@@ -176,15 +181,26 @@ async function renderShapeToPngBytes(
     ctx.lineTo(w * 0.2, h * 0.8);
     ctx.stroke();
   } else if (shapeType === 'rect') {
-    ctx.strokeRect(pad, pad, w - pad * 2, h - pad * 2);
+    if (isFilled) {
+      ctx.fillRect(0, 0, w, h);
+    }
+    if (effectiveStroke > 0) {
+      ctx.strokeRect(pad, pad, Math.max(1, w - pad * 2), Math.max(1, h - pad * 2));
+    }
   } else if (shapeType === 'circle') {
     ctx.beginPath();
-    ctx.ellipse(w / 2, h / 2, (w - pad * 2) / 2, (h - pad * 2) / 2, 0, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.ellipse(w / 2, h / 2, Math.max(1, (w - pad * 2) / 2), Math.max(1, (h - pad * 2) / 2), 0, 0, Math.PI * 2);
+    if (isFilled) {
+      ctx.fill();
+    }
+    if (effectiveStroke > 0) {
+      ctx.stroke();
+    }
   } else if (shapeType === 'arrow') {
-    const startX = pad;
+    ctx.lineWidth = Math.max(2, (strokeWidth || 2.5) * scale);
+    const startX = pad + 4;
     const startY = h / 2;
-    const endX = w - pad;
+    const endX = w - pad - 4;
     const endY = h / 2;
     const headLen = Math.min(w, h) * 0.28;
     ctx.beginPath();
@@ -359,21 +375,40 @@ export async function applyAnnotationsToPdf(
         const shH = ann.height * pageHeight;
         const shX = ann.x * pageWidth;
         const shY = pageHeight - ((ann.y + ann.height) * pageHeight);
+        const strokeW = ann.strokeWidth !== undefined ? ann.strokeWidth : 2;
+        const isFilled = !!ann.isFilled;
+        const mainColor = ann.color || '#0071E3';
+        const fillColorHex = ann.fillColor || mainColor;
 
-        const pngBytes = await renderShapeToPngBytes(
-          ann.shapeType,
-          ann.color || '#0071E3',
-          shW,
-          shH,
-          ann.strokeWidth || 3
-        );
-        const embeddedShape = await pdfDoc.embedPng(pngBytes);
-        page.drawImage(embeddedShape, {
-          x: Math.max(0, shX),
-          y: Math.max(0, shY),
-          width: shW,
-          height: shH,
-        });
+        if (ann.shapeType === 'rect') {
+          // Native vector rectangle: crisp edges, perfect bleed, zero raster pixelation
+          page.drawRectangle({
+            x: Math.max(0, shX),
+            y: Math.max(0, shY),
+            width: shW,
+            height: shH,
+            color: isFilled ? hexToRgb(fillColorHex) : undefined,
+            borderColor: strokeW > 0 ? hexToRgb(mainColor) : undefined,
+            borderWidth: strokeW > 0 ? strokeW : 0,
+          });
+        } else {
+          const pngBytes = await renderShapeToPngBytes(
+            ann.shapeType,
+            mainColor,
+            shW,
+            shH,
+            strokeW,
+            isFilled,
+            fillColorHex
+          );
+          const embeddedShape = await pdfDoc.embedPng(pngBytes);
+          page.drawImage(embeddedShape, {
+            x: Math.max(0, shX),
+            y: Math.max(0, shY),
+            width: shW,
+            height: shH,
+          });
+        }
       } catch (err) {
         console.error('Fehler beim Zeichnen des Symbols:', err);
       }

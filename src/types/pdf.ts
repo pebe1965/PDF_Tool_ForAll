@@ -73,6 +73,8 @@ export interface ShapeAnnotation {
   height: number; // normalized 0..1
   color: string; // hex color
   strokeWidth?: number;
+  isFilled?: boolean;
+  fillColor?: string;
 }
 
 export interface FreehandDrawingAnnotation {

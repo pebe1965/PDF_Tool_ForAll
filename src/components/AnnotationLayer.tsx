@@ -1264,6 +1264,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     y: number;
     initialW: number;
     initialH: number;
+    type?: 'corner' | 'right' | 'bottom';
   } | null>(null);
 
   // Resizing state for Text
@@ -1325,7 +1326,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   // Start resizing generic 2D box (Signature, Highlight, Redaction, Shape)
   const handlePointerDownBoxResize = (
     e: React.PointerEvent,
-    ann: SignatureAnnotation | HighlightAnnotation | RedactionAnnotation | ShapeAnnotation
+    ann: SignatureAnnotation | HighlightAnnotation | RedactionAnnotation | ShapeAnnotation,
+    resizeType: 'corner' | 'right' | 'bottom' = 'corner'
   ) => {
     e.stopPropagation();
     onSelectAnnotation(ann.id);
@@ -1335,6 +1337,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       y: e.clientY,
       initialW: ann.width,
       initialH: ann.height,
+      type: resizeType,
     });
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
@@ -1373,8 +1376,15 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       const annWidth = (ann as any).width || 0.2;
       const annHeight = (ann as any).height || 0.04;
 
-      const newX = Math.max(0.005, Math.min(0.995 - annWidth, dragStartPos.initialAnnX + deltaX));
-      const newY = Math.max(0.005, Math.min(0.995 - annHeight, dragStartPos.initialAnnY + deltaY));
+      // Shapes, images, redactions, and highlights can be placed flush to edges (0.0 .. 1.0)
+      const isFullBleed = ann.type === 'shape' || ann.type === 'redaction' || ann.type === 'image' || ann.type === 'highlight';
+      const minX = isFullBleed ? 0 : 0.005;
+      const maxX = isFullBleed ? Math.max(0, 1.0 - annWidth) : Math.max(0.005, 0.995 - annWidth);
+      const minY = isFullBleed ? 0 : 0.005;
+      const maxY = isFullBleed ? Math.max(0, 1.0 - annHeight) : Math.max(0.005, 0.995 - annHeight);
+
+      const newX = Math.max(minX, Math.min(maxX, dragStartPos.initialAnnX + deltaX));
+      const newY = Math.max(minY, Math.min(maxY, dragStartPos.initialAnnY + deltaY));
 
       onUpdateAnnotation({
         ...ann,
@@ -1406,11 +1416,24 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         | undefined;
       if (!ann) return;
 
-      const minW = ann.type === 'shape' ? 0.025 : 0.04;
-      const minH = ann.type === 'highlight' || ann.type === 'redaction' ? 0.015 : 0.025;
+      const isShape = ann.type === 'shape';
+      const minW = isShape ? 0.015 : 0.04;
+      const minH = ann.type === 'highlight' || ann.type === 'redaction' ? 0.015 : 0.015;
 
-      const newW = Math.max(minW, Math.min(0.98 - ann.x, resizeBoxStartPos.initialW + deltaX));
-      const newH = Math.max(minH, Math.min(0.98 - ann.y, resizeBoxStartPos.initialH + deltaY));
+      // Allow shapes to stretch 100% flush to the right/bottom page edge
+      const maxW = isShape ? Math.max(minW, 1.0 - ann.x) : Math.max(minW, 0.98 - ann.x);
+      const maxH = isShape ? Math.max(minH, 1.0 - ann.y) : Math.max(minH, 0.98 - ann.y);
+
+      let newW = ann.width;
+      let newH = ann.height;
+
+      const resizeType = resizeBoxStartPos.type || 'corner';
+      if (resizeType === 'right' || resizeType === 'corner') {
+        newW = Math.max(minW, Math.min(maxW, resizeBoxStartPos.initialW + deltaX));
+      }
+      if (resizeType === 'bottom' || resizeType === 'corner') {
+        newH = Math.max(minH, Math.min(maxH, resizeBoxStartPos.initialH + deltaY));
+      }
 
       onUpdateAnnotation({
         ...ann,
@@ -1692,7 +1715,10 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
           const widthPx = sh.width * pageWidth;
           const heightPx = sh.height * pageHeight;
           const strokeC = sh.color || '#0071E3';
-          const sw = sh.strokeWidth || 3;
+          const strokeW = sh.strokeWidth !== undefined ? sh.strokeWidth : 2;
+          const isFilled = !!sh.isFilled;
+          const fillC = sh.fillColor || sh.color || '#000000';
+          const scaledStroke = Math.max(1, Math.round(strokeW * (scale || 1)));
 
           return (
             <div
@@ -1710,89 +1736,150 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
               }}
               onPointerDown={(e) => handlePointerDownDrag(e, sh)}
               className={`pointer-events-auto cursor-move ${
-                isSelected ? 'ring-2 ring-[#0071E3] ring-offset-2 rounded-lg z-20' : 'hover:ring-1 hover:ring-blue-300 rounded z-10'
+                isSelected ? 'ring-2 ring-[#0071E3] ring-offset-2 z-20' : 'hover:ring-1 hover:ring-blue-300 z-10'
               }`}
             >
-              <svg
-                viewBox="0 0 100 100"
-                preserveAspectRatio="none"
-                className="w-full h-full overflow-visible pointer-events-none"
-              >
-                {sh.shapeType === 'check' && (
-                  <path
-                    d="M 16 54 L 42 80 L 85 20"
-                    fill="none"
-                    stroke={strokeC}
-                    strokeWidth={sw * 3.2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                )}
-                {sh.shapeType === 'cross' && (
-                  <path
-                    d="M 20 20 L 80 80 M 80 20 L 20 80"
-                    fill="none"
-                    stroke={strokeC}
-                    strokeWidth={sw * 3.2}
-                    strokeLinecap="round"
-                  />
-                )}
-                {sh.shapeType === 'rect' && (
-                  <rect
-                    x="4"
-                    y="4"
-                    width="92"
-                    height="92"
-                    fill="none"
-                    stroke={strokeC}
-                    strokeWidth={sw * 2}
-                    rx="4"
-                  />
-                )}
-                {sh.shapeType === 'circle' && (
-                  <ellipse
-                    cx="50"
-                    cy="50"
-                    rx="46"
-                    ry="46"
-                    fill="none"
-                    stroke={strokeC}
-                    strokeWidth={sw * 2}
-                  />
-                )}
-                {sh.shapeType === 'arrow' && (
-                  <path
-                    d="M 6 50 L 92 50 M 68 25 L 92 50 L 68 75"
-                    fill="none"
-                    stroke={strokeC}
-                    strokeWidth={sw * 2.5}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                )}
-              </svg>
+              {sh.shapeType === 'rect' ? (
+                <div
+                  className="w-full h-full pointer-events-none"
+                  style={{
+                    backgroundColor: isFilled ? fillC : 'transparent',
+                    border: strokeW > 0 ? `${scaledStroke}px solid ${strokeC}` : 'none',
+                    boxSizing: 'border-box',
+                    borderRadius: strokeW === 0 || isFilled ? 0 : 2,
+                  }}
+                />
+              ) : sh.shapeType === 'circle' ? (
+                <div
+                  className="w-full h-full pointer-events-none rounded-full"
+                  style={{
+                    backgroundColor: isFilled ? fillC : 'transparent',
+                    border: strokeW > 0 ? `${scaledStroke}px solid ${strokeC}` : 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              ) : (
+                <svg
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                  className="w-full h-full overflow-visible pointer-events-none"
+                >
+                  {sh.shapeType === 'check' && (
+                    <path
+                      d="M 16 54 L 42 80 L 85 20"
+                      fill="none"
+                      stroke={strokeC}
+                      strokeWidth={Math.max(2, (strokeW || 3) * 2.5)}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  )}
+                  {sh.shapeType === 'cross' && (
+                    <path
+                      d="M 20 20 L 80 80 M 80 20 L 20 80"
+                      fill="none"
+                      stroke={strokeC}
+                      strokeWidth={Math.max(2, (strokeW || 3) * 2.5)}
+                      strokeLinecap="round"
+                    />
+                  )}
+                  {sh.shapeType === 'arrow' && (
+                    <path
+                      d="M 6 50 L 92 50 M 68 25 L 92 50 L 68 75"
+                      fill="none"
+                      stroke={strokeC}
+                      strokeWidth={Math.max(2, (strokeW || 2.5) * 2)}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  )}
+                </svg>
+              )}
 
               {isSelected && (
                 <>
                   <div
-                    className="absolute -top-10 left-0 flex items-center gap-1.5 bg-[#1D1D1F] text-white px-2 py-1 rounded-xl shadow-xl text-xs z-30 whitespace-nowrap"
+                    className={`absolute ${sh.y < 0.08 ? 'top-full mt-2' : '-top-11'} left-0 flex items-center gap-1.5 bg-[#1D1D1F] text-white px-2 py-1.5 rounded-xl shadow-xl text-xs z-30 whitespace-nowrap`}
                     onPointerDown={(e) => e.stopPropagation()}
                   >
-                    {['#000000', '#FFFFFF', '#0071E3', '#2BB3A3', '#F0A33A', '#E02020', '#107C41'].map((c) => (
+                    {/* Farbauswahl */}
+                    {['#000000', '#FFFFFF', '#1D1D1F', '#0071E3', '#2BB3A3', '#F0A33A', '#E02020', '#107C41'].map((c) => (
                       <button
                         key={c}
                         onClick={() => onUpdateAnnotation({ ...sh, color: c })}
                         style={{ backgroundColor: c }}
-                        className={`w-3.5 h-3.5 rounded-full border border-white/60 ${
-                          sh.color === c ? 'scale-125 ring-2 ring-white' : ''
+                        title={`Farbe: ${c}`}
+                        className={`w-3.5 h-3.5 rounded-full border border-white/60 transition ${
+                          sh.color === c ? 'scale-125 ring-2 ring-white' : 'hover:scale-110'
                         }`}
                       />
                     ))}
+
+                    {/* Füllung umschalten (für Rechteck & Kreis) */}
+                    {(sh.shapeType === 'rect' || sh.shapeType === 'circle') && (
+                      <>
+                        <div className="w-[1px] h-3.5 bg-white/20 mx-0.5" />
+                        <button
+                          onClick={() => {
+                            const nextFilled = !isFilled;
+                            const nextStroke = !nextFilled && strokeW === 0 ? 2 : strokeW;
+                            onUpdateAnnotation({ ...sh, isFilled: nextFilled, strokeWidth: nextStroke });
+                          }}
+                          className={`px-1.5 py-0.5 rounded text-[11px] font-medium transition ${
+                            isFilled ? 'bg-[#0071E3] text-white font-semibold' : 'hover:bg-white/20 text-gray-300'
+                          }`}
+                          title={isFilled ? 'Fläche gefüllt (Klicken für nur Rahmen)' : 'Nur Rahmen (Klicken für gefüllte Fläche)'}
+                        >
+                          {isFilled ? 'Gefüllt' : 'Rahmen'}
+                        </button>
+                      </>
+                    )}
+
+                    {/* Rahmenstärke (0, 1, 2, 4, 8 px) */}
+                    <div className="w-[1px] h-3.5 bg-white/20 mx-0.5" />
+                    <span className="text-[10px] text-gray-400 select-none">Rahmen:</span>
+                    {[0, 1, 2, 4, 8].map((w) => (
+                      <button
+                        key={w}
+                        onClick={() => {
+                          const nextFilled = w === 0 && !isFilled ? true : isFilled;
+                          onUpdateAnnotation({ ...sh, strokeWidth: w, isFilled: nextFilled });
+                        }}
+                        className={`px-1.5 py-0.5 rounded text-[11px] transition ${
+                          strokeW === w ? 'bg-white/30 text-white font-bold' : 'hover:bg-white/10 text-gray-300'
+                        }`}
+                        title={w === 0 ? 'Ohne Rahmen (0 px)' : `Rahmenstärke ${w} px`}
+                      >
+                        {w === 0 ? 'Ohne' : `${w}px`}
+                      </button>
+                    ))}
+
+                    {/* Schnell-Aktionen für Rechteck */}
+                    {sh.shapeType === 'rect' && (
+                      <>
+                        <div className="w-[1px] h-3.5 bg-white/20 mx-0.5" />
+                        <button
+                          onClick={() => onUpdateAnnotation({ ...sh, x: 0, width: 1.0 })}
+                          className="px-1.5 py-0.5 rounded text-[11px] font-medium hover:bg-white/20 text-gray-200 hover:text-white transition"
+                          title="Über die gesamte Seitenbreite spannen (100 %)"
+                        >
+                          100 % Breite
+                        </button>
+                        <button
+                          onClick={() => onUpdateAnnotation({ ...sh, y: 0 })}
+                          className="px-1.5 py-0.5 rounded text-[11px] font-medium hover:bg-white/20 text-gray-200 hover:text-white transition"
+                          title="Ganz nach oben an den Seitenrand anheften"
+                        >
+                          Ganz oben
+                        </button>
+                      </>
+                    )}
+
                     <div className="w-[1px] h-3.5 bg-white/20 mx-0.5" />
                     {onDuplicateAnnotation && (
                       <button
                         onClick={() => onDuplicateAnnotation(sh)}
-                        className="p-1 hover:bg-white/20 rounded"
+                        className="p-1 hover:bg-white/20 rounded text-gray-300 hover:text-white"
                         title="Duplizieren"
                       >
                         <Copy size={12} />
@@ -1824,9 +1911,24 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                       <Trash2 size={12} />
                     </button>
                   </div>
+
+                  {/* Corner resize handle */}
                   <div
-                    onPointerDown={(e) => handlePointerDownBoxResize(e, sh)}
+                    onPointerDown={(e) => handlePointerDownBoxResize(e, sh, 'corner')}
                     className="absolute -bottom-2 -right-2 w-4 h-4 bg-[#0071E3] rounded-full cursor-se-resize ring-2 ring-white shadow z-30"
+                    title="Größe anpassen (Ecke)"
+                  />
+                  {/* Right edge resize handle */}
+                  <div
+                    onPointerDown={(e) => handlePointerDownBoxResize(e, sh, 'right')}
+                    className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-5 bg-[#0071E3] rounded-sm cursor-e-resize ring-2 ring-white shadow z-30"
+                    title="Breite anpassen"
+                  />
+                  {/* Bottom edge resize handle */}
+                  <div
+                    onPointerDown={(e) => handlePointerDownBoxResize(e, sh, 'bottom')}
+                    className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-5 h-3 bg-[#0071E3] rounded-sm cursor-s-resize ring-2 ring-white shadow z-30"
+                    title="Höhe anpassen"
                   />
                 </>
               )}

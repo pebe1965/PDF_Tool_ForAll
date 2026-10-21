@@ -817,7 +817,15 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   // Insert quick shape or symbol (Checkmark, Cross, Rect, Circle, Arrow)
   const handleInsertShape = (
     shapeType: 'check' | 'cross' | 'rect' | 'circle' | 'arrow',
-    defaultColor: string
+    defaultColor: string,
+    options?: {
+      isFilled?: boolean;
+      strokeWidth?: number;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+    }
   ) => {
     const isSymbol = shapeType === 'check' || shapeType === 'cross';
     const newShape: ShapeAnnotation = {
@@ -825,12 +833,13 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       type: 'shape',
       pageNumber: currentPage,
       shapeType,
-      x: 0.42,
-      y: 0.42,
-      width: isSymbol ? 0.045 : 0.18,
-      height: isSymbol ? 0.032 : shapeType === 'arrow' ? 0.04 : 0.08,
+      x: options?.x ?? (options?.width === 1.0 ? 0 : 0.4),
+      y: options?.y ?? 0.35,
+      width: options?.width ?? (isSymbol ? 0.045 : 0.22),
+      height: options?.height ?? (isSymbol ? 0.032 : shapeType === 'arrow' ? 0.04 : 0.1),
       color: defaultColor,
-      strokeWidth: 3,
+      strokeWidth: options?.strokeWidth !== undefined ? options.strokeWidth : (isSymbol ? 3 : shapeType === 'arrow' ? 2.5 : 2),
+      isFilled: options?.isFilled ?? false,
     };
     pushAnnotationsChange((prev) => [...prev, newShape]);
     setSelectedAnnId(newShape.id);
@@ -1823,6 +1832,22 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                     >
                       <Square size={14} className="text-red-600" />
                       <span>Rahmen / Kasten</span>
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleInsertShape('rect', '#000000', {
+                          isFilled: true,
+                          strokeWidth: 0,
+                          x: 0,
+                          y: 0,
+                          width: 1.0,
+                          height: 0.28,
+                        })
+                      }
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-gray-100 text-gray-800 font-medium transition"
+                    >
+                      <div className="w-3.5 h-3.5 bg-black rounded-sm border border-gray-400" />
+                      <span>Hintergrund-Balken (100% Breite, Oben)</span>
                     </button>
                     <button
                       onClick={() => handleInsertShape('circle', '#E02020')}
