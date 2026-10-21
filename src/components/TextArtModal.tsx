@@ -18,7 +18,6 @@ import {
   getFontFamilyCss,
   buildTextArtSvgMarkup,
   calculateFitToWidthFontSize,
-  getTextArtDimensions,
 } from '../lib/textArtHelper';
 
 interface TextArtModalProps {
@@ -70,8 +69,8 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Ideale Schriftgröße für randlose Skalierung von Seitenrand zu Seitenrand
-  const maxFittingSize = calculateFitToWidthFontSize(text, fontFamily, letterSpacing, 720);
-  const sliderMax = Math.max(90, Math.min(240, Math.round(maxFittingSize * 1.35)));
+  const maxFittingSize = calculateFitToWidthFontSize(text, fontFamily, letterSpacing, 720, 250);
+  const sliderMax = Math.max(70, Math.min(220, maxFittingSize));
 
   // Synchronisiere State bei jedem Öffnen oder Objektwechsel
   useEffect(() => {
@@ -198,19 +197,17 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const dims = getTextArtDimensions(currentPreviewArt, fontSize);
-    const aspect = dims.viewBoxW / Math.max(1, dims.viewBoxH);
-    // Page is roughly A4 (width/height ~ 0.707)
-    // Desired width on page: between 0.45 and 0.85 depending on font size
+    const isMultiLine = text.includes('\n');
     const autoWidth =
       curveType === 'circle'
         ? 0.48
-        : Math.min(0.85, Math.max(0.40, 0.45 + (fontSize / 200) * 0.35));
-    // Proportional height matching the text's actual aspect ratio so there is no empty space!
+        : Math.min(0.85, Math.max(0.48, 0.50 + (fontSize / 220) * 0.30));
     const autoHeight =
       curveType === 'circle'
-        ? 0.40
-        : Math.min(0.65, Math.max(0.06, (autoWidth * 0.707) / aspect));
+        ? 0.38
+        : isMultiLine
+        ? 0.28
+        : 0.18;
 
     onInsert({
       type: 'textart',
