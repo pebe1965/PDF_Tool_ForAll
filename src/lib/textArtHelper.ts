@@ -158,6 +158,71 @@ export function getFontFamilyCss(family?: string): string {
   return '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 }
 
+export const FONT_WIDTH_FACTORS: Record<string, number> = {
+  Bungee: 0.92,
+  Anton: 0.65,
+  'Alfa Slab One': 0.88,
+  'Archivo Black': 0.84,
+  'Paytone One': 0.80,
+  Impact: 0.62,
+  'Arial Black': 0.82,
+  Montserrat: 0.78,
+  'Playfair Display': 0.68,
+  Cinzel: 0.76,
+  'Dancing Script': 0.55,
+  Caveat: 0.50,
+  Helvetica: 0.68,
+  Times: 0.65,
+  Courier: 0.60,
+};
+
+/**
+ * Calculates estimated rendered text width for the longest line of text
+ */
+export function getEstimatedTextWidth(
+  text: string,
+  fontFamily: string,
+  fontSize: number,
+  letterSpacing = 0
+): number {
+  const lines = (text || 'TextArt').split('\n').map((l) => l.trim()).filter(Boolean);
+  const factor = FONT_WIDTH_FACTORS[fontFamily] || 0.75;
+  let maxW = 0;
+  for (const line of lines) {
+    const chars = Math.max(1, line.length);
+    const w = chars * fontSize * factor + (chars - 1) * letterSpacing;
+    if (w > maxW) maxW = w;
+  }
+  return maxW;
+}
+
+/**
+ * Calculates the ideal font size in pixels so the longest line fills the target width
+ * cleanly between the margins (e.g. 720px in an 800px box).
+ */
+export function calculateFitToWidthFontSize(
+  text: string,
+  fontFamily: string,
+  letterSpacing = 0,
+  targetWidth = 720
+): number {
+  const lines = (text || 'TextArt').split('\n').map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return 64;
+
+  const factor = FONT_WIDTH_FACTORS[fontFamily] || 0.75;
+
+  let minIdealSize = 200;
+  for (const line of lines) {
+    const chars = Math.max(1, line.length);
+    const spacingTotal = (chars - 1) * letterSpacing;
+    const avail = Math.max(80, targetWidth - spacingTotal);
+    const ideal = Math.round(avail / (chars * factor));
+    if (ideal < minIdealSize) minIdealSize = ideal;
+  }
+
+  return Math.max(16, Math.min(200, minIdealSize));
+}
+
 /**
  * Generates an SVG path definition based on curveType and bend (-100 to +100)
  * Bounding coordinate space is 800 x 320 with true circular curvature so short words bend visibly
@@ -177,15 +242,15 @@ export function getSvgPathD(
   switch (curveType) {
     case 'arc-up': {
       // True circular/elliptical arch that visibly curls letters at any word length
-      // Radius tightens as bend increases: from 450 (gentle) to 130 (tight dome)
       const R = Math.max(120, 420 - intensity * 290) + lineOffset;
-      // Arc angle expands with bend: from 25deg (gentle) to 150deg (dramatic arch)
       const arcAngleRad = (Math.PI / 180) * (20 + intensity * 130);
       const cx = 400;
       const cy = 160 + R * Math.cos(arcAngleRad / 2) - lineOffset;
 
-      const startAngle = -Math.PI / 2 - arcAngleRad / 2;
-      const endAngle = -Math.PI / 2 + arcAngleRad / 2;
+      // Span at least 240 degrees so long text never falls off the path ends
+      const halfSpan = Math.max(arcAngleRad / 2, Math.PI * 0.68);
+      const startAngle = -Math.PI / 2 - halfSpan;
+      const endAngle = -Math.PI / 2 + halfSpan;
 
       const x1 = cx + R * Math.cos(startAngle);
       const y1 = cy + R * Math.sin(startAngle);
@@ -201,8 +266,10 @@ export function getSvgPathD(
       const cx = 400;
       const cy = 160 - R * Math.cos(arcAngleRad / 2) + lineOffset;
 
-      const startAngle = Math.PI / 2 - arcAngleRad / 2;
-      const endAngle = Math.PI / 2 + arcAngleRad / 2;
+      // Span at least 240 degrees so long text never falls off the path ends
+      const halfSpan = Math.max(arcAngleRad / 2, Math.PI * 0.68);
+      const startAngle = Math.PI / 2 - halfSpan;
+      const endAngle = Math.PI / 2 + halfSpan;
 
       const x1 = cx + R * Math.cos(startAngle);
       const y1 = cy + R * Math.sin(startAngle);
@@ -219,15 +286,16 @@ export function getSvgPathD(
       return `M ${(cx - R).toFixed(1)},${cy} A ${R.toFixed(1)},${R.toFixed(1)} 0 0,1 ${(cx + R).toFixed(1)},${cy}`;
     }
     case 'wave': {
-      // Smooth sinusoidal wave
+      // Smooth sinusoidal wave centered at 400 with ample length so characters never clip
       const waveH = intensity * 75;
       const midY = 160 + lineOffset;
-      return `M 40,${midY} Q 220,${midY - waveH} 400,${midY} T 760,${midY}`;
+      return `M -2000,${midY} Q -800,${midY - waveH} 400,${midY} T 2800,${midY}`;
     }
     case 'flat':
     default: {
+      // Unbounded horizontal line centered at 400 so characters never fall off path bounds
       const lineY = 160 + lineOffset;
-      return `M 40,${lineY} L 760,${lineY}`;
+      return `M -4000,${lineY} L 4800,${lineY}`;
     }
   }
 }
@@ -265,13 +333,19 @@ export function buildTextArtSvgMarkup(
     fillAttr = `url(#${patId})`;
   }
 
+  const estimatedW = getEstimatedTextWidth(rawText, art.fontFamily, effectiveSize, letterSpacing);
+  // Dynamic viewBox so all characters remain completely visible without clipping
+  const contentWidth = Math.max(viewWidth, Math.round(estimatedW + 80));
+  const viewBoxX = (viewWidth - contentWidth) / 2;
+  const viewBoxW = contentWidth;
+
   const gradientColors = GRADIENT_DEFS[art.gradientPreset || 'gold'] || GRADIENT_DEFS.gold;
 
   const imgScale = art.imageScale || 1.0;
   const imgW = viewWidth * imgScale;
   const imgH = viewHeight * imgScale;
-  const imgX = ((art.imageOffsetX || 0) / 100) * viewWidth + (viewWidth - imgW) / 2;
-  const imgY = ((art.imageOffsetY || 0) / 100) * viewHeight + (viewHeight - imgH) / 2;
+  const imgX = 400 - imgW / 2 + ((art.imageOffsetX || 0) / 100) * viewWidth;
+  const imgY = 160 - imgH / 2 + ((art.imageOffsetY || 0) / 100) * viewHeight;
 
   // Build path defs for each line
   const pathsDef = lines
@@ -358,7 +432,7 @@ export function buildTextArtSvgMarkup(
     .join('');
 
   return `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewWidth} ${viewHeight}" width="100%" height="100%" overflow="visible" style="overflow: visible;">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBoxX} 0 ${viewBoxW} ${viewHeight}" width="100%" height="100%" overflow="visible" style="overflow: visible;">
       <defs>
         ${pathsDef}
         ${
@@ -375,7 +449,7 @@ export function buildTextArtSvgMarkup(
         ${
           art.fillMode === 'image' && art.imageDataUrl
             ? `
-          <pattern id="${patId}" patternUnits="userSpaceOnUse" width="${viewWidth}" height="${viewHeight}">
+          <pattern id="${patId}" patternUnits="userSpaceOnUse" x="${viewBoxX}" y="0" width="${viewBoxW}" height="${viewHeight}">
             <image href="${art.imageDataUrl}" x="${imgX}" y="${imgY}" width="${imgW}" height="${imgH}" preserveAspectRatio="xMidYMid slice" />
           </pattern>
         `

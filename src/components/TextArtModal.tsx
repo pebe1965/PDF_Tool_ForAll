@@ -17,6 +17,7 @@ import {
   GRADIENT_DEFS,
   getFontFamilyCss,
   buildTextArtSvgMarkup,
+  calculateFitToWidthFontSize,
 } from '../lib/textArtHelper';
 
 interface TextArtModalProps {
@@ -67,13 +68,25 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Ideale Schriftgröße für randlose Skalierung von Seitenrand zu Seitenrand
+  const maxFittingSize = calculateFitToWidthFontSize(text, fontFamily, letterSpacing, 720);
+  const sliderMax = Math.max(90, Math.min(240, Math.round(maxFittingSize * 1.35)));
+
   // Synchronisiere State bei jedem Öffnen oder Objektwechsel
   useEffect(() => {
     if (!isOpen) return;
     if (initialData) {
       setText(initialData.text || '');
       setFontFamily(initialData.fontFamily || 'Bungee');
-      setFontSize(initialData.fontSize || 68);
+      setFontSize(
+        initialData.fontSize ||
+          calculateFitToWidthFontSize(
+            initialData.text || '',
+            initialData.fontFamily || 'Bungee',
+            initialData.letterSpacing || 0,
+            720
+          )
+      );
       setLetterSpacing(initialData.letterSpacing ?? 0);
       setCurveType(initialData.curveType || 'flat');
       setBend(initialData.bend ?? 40);
@@ -90,9 +103,10 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
       setShadowColor(initialData.shadowColor || '#1D1D1F');
     } else {
       // Frisches, leeres Design für neues Objekt
+      const defaultSize = calculateFitToWidthFontSize('DEIN TEXT', 'Bungee', 0, 720);
       setText('DEIN TEXT');
       setFontFamily('Bungee');
-      setFontSize(68);
+      setFontSize(defaultSize);
       setLetterSpacing(0);
       setCurveType('flat');
       setBend(40);
@@ -395,18 +409,33 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                 </select>
               </div>
 
-              {/* Schriftgröße stufenlos bis 180px */}
-              <div className="space-y-1.5 bg-gray-50 p-3 rounded-2xl border border-gray-200">
+              {/* Schriftgröße stufenlos & Rand-zu-Rand Skalierung */}
+              <div className="space-y-2 bg-gray-50 p-3 rounded-2xl border border-gray-200">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-gray-700">Schriftgröße</span>
-                  <span className="font-bold text-[#0071E3] bg-blue-50 px-2.5 py-0.5 rounded-lg border border-blue-200">
-                    {fontSize} px
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-gray-700">Schriftgröße</span>
+                    <span className="font-bold text-[#0071E3] bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200">
+                      {fontSize} px
+                    </span>
+                    {fontSize === maxFittingSize && (
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
+                        Rand zu Rand
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFontSize(maxFittingSize)}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#0071E3] text-white hover:bg-blue-600 flex items-center gap-1 transition shadow-sm"
+                    title="Skaliert die Schrift so, dass sie exakt bis an beide Seitenränder reicht"
+                  >
+                    <span>↔️ Bis an Seitenränder ({maxFittingSize}px)</span>
+                  </button>
                 </div>
                 <input
                   type="range"
-                  min="16"
-                  max="180"
+                  min="14"
+                  max={sliderMax}
                   step="1"
                   value={fontSize}
                   onChange={(e) => setFontSize(Number(e.target.value))}
@@ -415,31 +444,31 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                 <div className="flex items-center justify-between text-[10px] text-gray-500 px-0.5">
                   <button
                     type="button"
-                    onClick={() => setFontSize(36)}
+                    onClick={() => setFontSize(Math.max(14, Math.round(maxFittingSize * 0.5)))}
                     className="hover:text-blue-600 transition"
                   >
-                    Klein (36px)
+                    Kompakt ({Math.max(14, Math.round(maxFittingSize * 0.5))}px)
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFontSize(68)}
+                    onClick={() => setFontSize(Math.max(16, Math.round(maxFittingSize * 0.75)))}
                     className="hover:text-blue-600 transition"
                   >
-                    Mittel (68px)
+                    Mittel ({Math.max(16, Math.round(maxFittingSize * 0.75))}px)
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFontSize(110)}
-                    className="hover:text-blue-600 transition"
+                    onClick={() => setFontSize(maxFittingSize)}
+                    className="hover:text-blue-600 font-bold text-[#0071E3] transition"
                   >
-                    Groß (110px)
+                    ↔️ Rand zu Rand ({maxFittingSize}px)
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFontSize(150)}
+                    onClick={() => setFontSize(sliderMax)}
                     className="hover:text-blue-600 transition"
                   >
-                    Plakat (150px)
+                    Maximal ({sliderMax}px)
                   </button>
                 </div>
               </div>
