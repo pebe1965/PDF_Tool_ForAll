@@ -33,10 +33,12 @@ import {
   RedactionAnnotation,
   ShapeAnnotation,
   FreehandDrawingAnnotation,
+  TextArtAnnotation,
   Annotation,
 } from '../types/pdf';
 import { classifyLine } from '../lib/a4Pagination';
 import { formatMarkdownToCleanText } from '../lib/geminiService';
+import { buildTextArtSvgMarkup, getFontFamilyCss } from '../lib/textArtHelper';
 
 interface AnnotationLayerProps {
   pageNumber: number;
@@ -48,15 +50,10 @@ interface AnnotationLayerProps {
   onDeleteAnnotation: (id: string) => void;
   onDuplicateAnnotation?: (ann: Annotation) => void;
   onReorderAnnotation?: (id: string, action: 'bringToFront' | 'sendToBack') => void;
+  onEditTextArt?: (art: TextArtAnnotation) => void;
   selectedAnnotationId: string | null;
   onSelectAnnotation: (id: string | null) => void;
 }
-
-const getFontFamilyCss = (family?: string) => {
-  if (family === 'Times') return '"Times New Roman", Times, Georgia, serif';
-  if (family === 'Courier') return '"Courier New", Courier, monospace';
-  return '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-};
 
 const stripLinePrefix = (line: string): string => {
   return line
@@ -424,6 +421,13 @@ const TextAnnotationItem: React.FC<{
               <option value="Helvetica" className="bg-[#1D1D1F] text-white">Sans (Standard)</option>
               <option value="Times" className="bg-[#1D1D1F] text-white">Serif (Times)</option>
               <option value="Courier" className="bg-[#1D1D1F] text-white">Mono (Courier)</option>
+              <option value="Impact" className="bg-[#1D1D1F] text-white">Impact (Plakat)</option>
+              <option value="Arial Black" className="bg-[#1D1D1F] text-white">Arial Black (Massiv)</option>
+              <option value="Montserrat" className="bg-[#1D1D1F] text-white">Montserrat (Modern)</option>
+              <option value="Playfair Display" className="bg-[#1D1D1F] text-white">Playfair Display (Design)</option>
+              <option value="Dancing Script" className="bg-[#1D1D1F] text-white">Dancing Script (Schreibschrift)</option>
+              <option value="Caveat" className="bg-[#1D1D1F] text-white">Caveat (Handschrift)</option>
+              <option value="Cinzel" className="bg-[#1D1D1F] text-white">Cinzel (Klassisch)</option>
             </select>
 
             <div className="flex items-center bg-white/10 p-0.5 rounded-lg">
@@ -1243,6 +1247,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   onDeleteAnnotation,
   onDuplicateAnnotation,
   onReorderAnnotation,
+  onEditTextArt,
   selectedAnnotationId,
   onSelectAnnotation,
 }) => {
@@ -1257,7 +1262,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     initialAnnY: number;
   } | null>(null);
 
-  // Resizing state for Signatures / Boxes (Highlight, Redaction, Shape)
+  // Resizing state for Signatures / Boxes (Highlight, Redaction, Shape, TextArt)
   const [resizingBoxId, setResizingBoxId] = useState<string | null>(null);
   const [resizeBoxStartPos, setResizeBoxStartPos] = useState<{
     x: number;
@@ -1298,6 +1303,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       | HighlightAnnotation
       | RedactionAnnotation
       | ShapeAnnotation
+      | TextArtAnnotation
   ) => {
     e.stopPropagation();
     onSelectAnnotation(ann.id);
@@ -1323,10 +1329,10 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
-  // Start resizing generic 2D box (Signature, Highlight, Redaction, Shape)
+  // Start resizing generic 2D box (Signature, Highlight, Redaction, Shape, TextArt)
   const handlePointerDownBoxResize = (
     e: React.PointerEvent,
-    ann: SignatureAnnotation | HighlightAnnotation | RedactionAnnotation | ShapeAnnotation,
+    ann: SignatureAnnotation | HighlightAnnotation | RedactionAnnotation | ShapeAnnotation | TextArtAnnotation,
     resizeType: 'corner' | 'right' | 'bottom' = 'corner'
   ) => {
     e.stopPropagation();
@@ -1376,8 +1382,13 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       const annWidth = (ann as any).width || 0.2;
       const annHeight = (ann as any).height || 0.04;
 
-      // Shapes, images, redactions, and highlights can be placed flush to edges (0.0 .. 1.0)
-      const isFullBleed = ann.type === 'shape' || ann.type === 'redaction' || ann.type === 'image' || ann.type === 'highlight';
+      // Shapes, images, redactions, highlights and textart can be placed flush to edges (0.0 .. 1.0)
+      const isFullBleed =
+        ann.type === 'shape' ||
+        ann.type === 'redaction' ||
+        ann.type === 'image' ||
+        ann.type === 'highlight' ||
+        ann.type === 'textart';
       const minX = isFullBleed ? 0 : 0.005;
       const maxX = isFullBleed ? Math.max(0, 1.0 - annWidth) : Math.max(0.005, 0.995 - annWidth);
       const minY = isFullBleed ? 0 : 0.005;
@@ -1413,14 +1424,15 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         | HighlightAnnotation
         | RedactionAnnotation
         | ShapeAnnotation
+        | TextArtAnnotation
         | undefined;
       if (!ann) return;
 
-      const isShape = ann.type === 'shape';
-      const minW = isShape ? 0.015 : 0.04;
-      const minH = ann.type === 'highlight' || ann.type === 'redaction' ? 0.015 : 0.015;
+      const isShape = ann.type === 'shape' || ann.type === 'textart';
+      const minW = isShape ? 0.02 : 0.04;
+      const minH = ann.type === 'highlight' || ann.type === 'redaction' ? 0.015 : 0.02;
 
-      // Allow shapes to stretch 100% flush to the right/bottom page edge
+      // Allow shapes & textart to stretch flush to page edges
       const maxW = isShape ? Math.max(minW, 1.0 - ann.x) : Math.max(minW, 0.98 - ann.x);
       const maxH = isShape ? Math.max(minH, 1.0 - ann.y) : Math.max(minH, 0.98 - ann.y);
 
@@ -1927,6 +1939,123 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                   {/* Bottom edge resize handle */}
                   <div
                     onPointerDown={(e) => handlePointerDownBoxResize(e, sh, 'bottom')}
+                    className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-5 h-3 bg-[#0071E3] rounded-sm cursor-s-resize ring-2 ring-white shadow z-30"
+                    title="Höhe anpassen"
+                  />
+                </>
+              )}
+            </div>
+          );
+        }
+
+        if (ann.type === 'textart') {
+          const art = ann as TextArtAnnotation;
+          const leftPx = art.x * pageWidth;
+          const topPx = art.y * pageHeight;
+          const widthPx = art.width * pageWidth;
+          const heightPx = art.height * pageHeight;
+          const svgMarkup = buildTextArtSvgMarkup(art, 600, 240, `layer_${art.id}`);
+
+          return (
+            <div
+              key={art.id}
+              style={{
+                position: 'absolute',
+                left: `${leftPx}px`,
+                top: `${topPx}px`,
+                width: `${widthPx}px`,
+                height: `${heightPx}px`,
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectAnnotation(art.id);
+              }}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                if (onEditTextArt) onEditTextArt(art);
+              }}
+              onPointerDown={(e) => handlePointerDownDrag(e, art)}
+              className={`pointer-events-auto cursor-move ${
+                isSelected ? 'ring-2 ring-[#0071E3] ring-offset-2 rounded-xl z-20' : 'hover:ring-1 hover:ring-blue-300 rounded z-10'
+              }`}
+            >
+              <div
+                className="w-full h-full pointer-events-none select-none flex items-center justify-center overflow-visible"
+                dangerouslySetInnerHTML={{ __html: svgMarkup }}
+              />
+
+              {isSelected && (
+                <>
+                  <div
+                    className={`absolute ${art.y < 0.08 ? 'top-full mt-2' : '-top-11'} left-0 flex items-center gap-1.5 bg-[#1D1D1F] text-white px-2.5 py-1.5 rounded-xl shadow-xl text-xs z-30 whitespace-nowrap`}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    {onEditTextArt && (
+                      <button
+                        onClick={() => onEditTextArt(art)}
+                        className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#0071E3] hover:bg-blue-600 text-white flex items-center gap-1.5 transition"
+                        title="TextArt & Biegung bearbeiten"
+                      >
+                        <Edit3 size={13} />
+                        <span>Bearbeiten</span>
+                      </button>
+                    )}
+
+                    <div className="w-[1px] h-3.5 bg-white/20 mx-0.5" />
+
+                    {onDuplicateAnnotation && (
+                      <button
+                        onClick={() => onDuplicateAnnotation(art)}
+                        className="p-1 hover:bg-white/20 rounded text-gray-300 hover:text-white"
+                        title="Duplizieren"
+                      >
+                        <Copy size={13} />
+                      </button>
+                    )}
+
+                    {onReorderAnnotation && (
+                      <>
+                        <button
+                          onClick={() => onReorderAnnotation(art.id, 'sendToBack')}
+                          className="p-1 hover:bg-white/20 rounded text-gray-300 hover:text-white"
+                          title="Ebene: Ganz nach hinten"
+                        >
+                          <ArrowDown size={13} />
+                        </button>
+                        <button
+                          onClick={() => onReorderAnnotation(art.id, 'bringToFront')}
+                          className="p-1 hover:bg-white/20 rounded text-gray-300 hover:text-white"
+                          title="Ebene: Ganz nach vorne"
+                        >
+                          <ArrowUp size={13} />
+                        </button>
+                      </>
+                    )}
+
+                    <button
+                      onClick={() => onDeleteAnnotation(art.id)}
+                      className="p-1 hover:bg-red-500 rounded text-red-300 hover:text-white"
+                      title="Löschen"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+
+                  {/* Corner resize handle */}
+                  <div
+                    onPointerDown={(e) => handlePointerDownBoxResize(e, art, 'corner')}
+                    className="absolute -bottom-2 -right-2 w-4 h-4 bg-[#0071E3] rounded-full cursor-se-resize ring-2 ring-white shadow z-30"
+                    title="Größe anpassen (Ecke)"
+                  />
+                  {/* Right edge resize handle */}
+                  <div
+                    onPointerDown={(e) => handlePointerDownBoxResize(e, art, 'right')}
+                    className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-5 bg-[#0071E3] rounded-sm cursor-e-resize ring-2 ring-white shadow z-30"
+                    title="Breite anpassen"
+                  />
+                  {/* Bottom edge resize handle */}
+                  <div
+                    onPointerDown={(e) => handlePointerDownBoxResize(e, art, 'bottom')}
                     className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-5 h-3 bg-[#0071E3] rounded-sm cursor-s-resize ring-2 ring-white shadow z-30"
                     title="Höhe anpassen"
                   />

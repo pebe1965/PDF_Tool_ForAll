@@ -8,8 +8,8 @@
       "description": "Text an beliebiger Stelle einfügen, flüssig durch mehrseitige Dokumente blättern, Unterschrift zeichnen, Textmarker, Symbole, Freihand-Stift und Bilder frei platzieren."
     },
     {
-      "module": "Textverarbeitung",
-      "description": "Checklisten mit anklickbaren Kästchen, Aufzählungen und nummerierte Listen, Überschriften, Ausrichtung und Einfügen aus der Zwischenablage mit automatischem Seitenumbruch."
+      "module": "Textverarbeitung & TextArt",
+      "description": "Gebogene Schriftzüge (Bogen, Kreis, Welle), WordArt-Effekte mit Farbverläufen und 3D-Schatten, Foto-in-Buchstaben Masken, neue Schriftarten, Checklisten und Listen."
     },
     {
       "module": "Hintergrund, Stempel & Formen",

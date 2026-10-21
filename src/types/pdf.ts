@@ -8,7 +8,7 @@ export interface TextAnnotation {
   fontSize: number;
   color: string; // e.g. '#000000', '#0071E3'
   width?: number;
-  fontFamily?: 'Helvetica' | 'Times' | 'Courier';
+  fontFamily?: 'Helvetica' | 'Times' | 'Courier' | 'Impact' | 'Arial Black' | 'Playfair Display' | 'Dancing Script' | 'Caveat' | 'Cinzel' | 'Montserrat' | string;
   isBold?: boolean;
   isItalic?: boolean;
   textAlign?: 'left' | 'center' | 'right';
@@ -86,6 +86,29 @@ export interface FreehandDrawingAnnotation {
   strokeWidth: number;
 }
 
+export interface TextArtAnnotation {
+  id: string;
+  type: 'textart';
+  pageNumber: number; // 1-indexed
+  x: number; // normalized 0..1
+  y: number; // normalized 0..1
+  width: number; // normalized 0..1
+  height: number; // normalized 0..1
+  text: string;
+  fontFamily: string; // 'Impact', 'Arial Black', 'Playfair Display', 'Dancing Script', 'Caveat', 'Cinzel', 'Montserrat', etc.
+  fontSize?: number; // base font size in pt or px
+  bend: number; // -100 to +100
+  curveType: 'arc-up' | 'arc-down' | 'wave' | 'circle' | 'flat';
+  fillMode: 'color' | 'gradient' | 'image';
+  color: string;
+  gradientPreset?: 'gold' | 'sunset' | 'neon' | 'rainbow' | 'silver' | 'ocean';
+  imageDataUrl?: string; // image mask data URL
+  strokeColor?: string;
+  strokeWidth?: number; // 0 = none
+  shadowColor?: string;
+  has3dShadow?: boolean;
+}
+
 export type Annotation =
   | TextAnnotation
   | SignatureAnnotation
@@ -93,7 +116,8 @@ export type Annotation =
   | ImageAnnotation
   | HighlightAnnotation
   | RedactionAnnotation
-  | ShapeAnnotation;
+  | ShapeAnnotation
+  | TextArtAnnotation;
 
 export interface PageMetadata {
   pageNumber: number;

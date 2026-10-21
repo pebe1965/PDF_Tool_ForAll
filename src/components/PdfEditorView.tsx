@@ -54,6 +54,7 @@ import { StampModal } from './StampModal';
 import { FormFillerModal } from './FormFillerModal';
 import { PageDecorationsModal } from './PageDecorationsModal';
 import { PageBackgroundModal } from './PageBackgroundModal';
+import { TextArtModal } from './TextArtModal';
 import { SaveDocumentModal } from './SaveDocumentModal';
 import { GeminiAiModal } from './GeminiAiModal';
 import { formatMarkdownToCleanText, extractTextFromPdf } from '../lib/geminiService';
@@ -67,6 +68,7 @@ import {
   RedactionAnnotation,
   ShapeAnnotation,
   FreehandDrawingAnnotation,
+  TextArtAnnotation,
   PdfFormFieldItem,
 } from '../types/pdf';
 import {
@@ -144,6 +146,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   const [isDecorationsModalOpen, setIsDecorationsModalOpen] = useState(false);
   const [isBackgroundModalOpen, setIsBackgroundModalOpen] = useState(false);
   const [pageBackgrounds, setPageBackgrounds] = useState<Record<number, string>>({});
+  const [isTextArtModalOpen, setIsTextArtModalOpen] = useState(false);
+  const [editingTextArt, setEditingTextArt] = useState<TextArtAnnotation | null>(null);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isDocSwitcherOpen, setIsDocSwitcherOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1391,6 +1395,42 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     });
   };
 
+  // TextArt handlers
+  const handleEditTextArt = (art: TextArtAnnotation) => {
+    setEditingTextArt(art);
+    setIsTextArtModalOpen(true);
+  };
+
+  const handleSaveTextArt = (
+    data: Omit<TextArtAnnotation, 'id' | 'pageNumber' | 'x' | 'y'>
+  ) => {
+    if (editingTextArt) {
+      handleUpdateAnnotation({
+        ...editingTextArt,
+        ...data,
+      });
+      setEditingTextArt(null);
+    } else {
+      const newWidth = data.width || 0.6;
+      const newHeight = data.height || 0.22;
+      const newX = Math.max(0.02, (1.0 - newWidth) / 2);
+      const newY = 0.22;
+
+      const newArt: TextArtAnnotation = {
+        ...data,
+        id: `textart_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        pageNumber: currentPage,
+        x: newX,
+        y: newY,
+        width: newWidth,
+        height: newHeight,
+      };
+      pushAnnotationsChange((prev) => [...prev, newArt]);
+      setSelectedAnnId(newArt.id);
+    }
+    setIsTextArtModalOpen(false);
+  };
+
   // Layer control: Move annotation to front or back
   const handleReorderAnnotation = (
     id: string,
@@ -1890,6 +1930,19 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                 <span>Stempel</span>
               </button>
 
+              {/* TextArt & WordArt Studio */}
+              <button
+                onClick={() => {
+                  setEditingTextArt(null);
+                  setIsTextArtModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 text-[#0071E3] rounded-xl text-xs font-bold border border-blue-200/80 shadow-sm transition"
+                title="TextArt & WordArt Studio: Gebogene Schriftzüge, 3D-Effekte, Farbverläufe & Foto-in-Buchstaben"
+              >
+                <Sparkles size={14} className="text-[#0071E3]" />
+                <span>TextArt</span>
+              </button>
+
               {/* DSGVO Redaction (Blackout) */}
               <button
                 onClick={() =>
@@ -2367,6 +2420,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                       onDeleteAnnotation={handleDeleteAnnotation}
                       onDuplicateAnnotation={handleDuplicateAnnotation}
                       onReorderAnnotation={handleReorderAnnotation}
+                      onEditTextArt={handleEditTextArt}
                       selectedAnnotationId={selectedAnnId}
                       onSelectAnnotation={setSelectedAnnId}
                     />
@@ -2494,6 +2548,17 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         currentColor={pageBackgrounds[currentPage] || '#FFFFFF'}
         onApplyBackground={handleApplyBackground}
         onResetBackground={handleResetBackground}
+      />
+
+      {/* TextArt & WordArt Studio Modal */}
+      <TextArtModal
+        isOpen={isTextArtModalOpen}
+        onClose={() => {
+          setIsTextArtModalOpen(false);
+          setEditingTextArt(null);
+        }}
+        onInsert={handleSaveTextArt}
+        initialData={editingTextArt}
       />
 
       {/* Save & Rename Document Modal (PDF Export, Editable .pdftool Project, or Internal Draft) */}

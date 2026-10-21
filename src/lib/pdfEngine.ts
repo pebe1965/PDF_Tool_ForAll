@@ -21,6 +21,7 @@ import {
 } from '../types/pdf';
 import { classifyLine } from './a4Pagination';
 import { pdfjsLib } from './pdfWorker';
+import { renderTextArtToPngBytes } from './textArtHelper';
 
 // Helper to convert hex color (#0071E3) to pdf-lib rgb(r, g, b)
 export function hexToRgb(hex: string) {
@@ -411,6 +412,24 @@ export async function applyAnnotationsToPdf(
         }
       } catch (err) {
         console.error('Fehler beim Zeichnen des Symbols:', err);
+      }
+    } else if (ann.type === 'textart') {
+      try {
+        const artW = ann.width * pageWidth;
+        const artH = ann.height * pageHeight;
+        const artX = ann.x * pageWidth;
+        const artY = pageHeight - ((ann.y + ann.height) * pageHeight);
+
+        const pngBytes = await renderTextArtToPngBytes(ann, artW, artH);
+        const embeddedArt = await pdfDoc.embedPng(pngBytes);
+        page.drawImage(embeddedArt, {
+          x: Math.max(0, artX),
+          y: Math.max(0, artY),
+          width: artW,
+          height: artH,
+        });
+      } catch (err) {
+        console.error('Fehler beim Zeichnen von TextArt:', err);
       }
     } else if (ann.type === 'drawing') {
       try {
