@@ -69,6 +69,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
   const [stretchToFit, setStretchToFit] = useState<boolean>(
     initialData?.stretchToFit !== false
   );
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [previewBgDark, setPreviewBgDark] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -120,6 +121,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
       setHas3dShadow(initialData.has3dShadow ?? true);
       setShadowColor(initialData.shadowColor || '#1D1D1F');
       setStretchToFit(initialData.stretchToFit !== false);
+      setSelectedPresetId(null);
     } else {
       // Frisches, leeres Design für neues Objekt
       const defaultSize = calculateFitToWidthFontSize('DEIN TEXT', 'Bungee', 0, 720);
@@ -141,6 +143,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
       setHas3dShadow(true);
       setShadowColor('#1D1D1F');
       setStretchToFit(true);
+      setSelectedPresetId(null);
     }
   }, [isOpen, initialData]);
 
@@ -148,6 +151,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
 
   // Apply a preset
   const handleApplyPreset = (presetId: string) => {
+    setSelectedPresetId(presetId);
     const preset = TEXTART_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
     const d = preset.data;
@@ -278,8 +282,18 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
           {/* Live Preview Box */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
-              <span>Live-Vorschau</span>
+            <div className="flex items-center justify-between text-xs font-medium">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-gray-700 font-bold">Live-Vorschau</span>
+                {TEXTART_PRESETS.find((p) => p.id === selectedPresetId) ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-[#0071E3] border border-blue-200 shadow-sm animate-fade-in">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#0071E3] animate-pulse"></span>
+                    Vorlage: {TEXTART_PRESETS.find((p) => p.id === selectedPresetId)?.name}
+                  </span>
+                ) : (
+                  <span className="text-gray-400 text-[11px]">(Individuell)</span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => setPreviewBgDark(!previewBgDark)}
@@ -343,25 +357,43 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
           <div className="space-y-2">
             <label className="text-xs font-semibold text-gray-700">WordArt Vorlagen (1-Klick)</label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {TEXTART_PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => handleApplyPreset(p.id)}
-                  className="flex flex-col items-start p-2.5 rounded-xl border border-gray-200 hover:border-blue-400 hover:shadow-md transition text-left group bg-gray-50/60 hover:bg-white"
-                >
-                  <div
-                    className="w-full h-7 rounded-lg mb-1.5 shadow-sm flex items-center justify-center text-xs font-bold text-white tracking-wide"
-                    style={{ background: p.previewGradient }}
+              {TEXTART_PRESETS.map((p) => {
+                const isSelected = selectedPresetId === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleApplyPreset(p.id)}
+                    className={`flex flex-col items-start p-2.5 rounded-xl border transition text-left group relative ${
+                      isSelected
+                        ? 'border-[#0071E3] bg-blue-50/50 ring-2 ring-[#0071E3]/30 shadow-md'
+                        : 'border-gray-200 hover:border-blue-300 hover:shadow-md bg-gray-50/60 hover:bg-white'
+                    }`}
                   >
-                    ABC
-                  </div>
-                  <span className="text-xs font-bold text-gray-900 group-hover:text-[#0071E3] truncate w-full">
-                    {p.name}
-                  </span>
-                  <span className="text-[10px] text-gray-500 line-clamp-1">{p.description}</span>
-                </button>
-              ))}
+                    <div
+                      className="w-full h-7 rounded-lg mb-1.5 shadow-sm flex items-center justify-center text-xs font-bold text-white tracking-wide"
+                      style={{ background: p.previewGradient }}
+                    >
+                      ABC
+                    </div>
+                    <div className="flex items-center justify-between w-full">
+                      <span
+                        className={`text-xs font-bold truncate ${
+                          isSelected ? 'text-[#0071E3]' : 'text-gray-900 group-hover:text-[#0071E3]'
+                        }`}
+                      >
+                        {p.name}
+                      </span>
+                      {isSelected && (
+                        <span className="text-[10px] font-bold text-[#0071E3] bg-blue-100 px-1.5 py-0.2 rounded-full shrink-0">
+                          Aktiv
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-gray-500 line-clamp-1">{p.description}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

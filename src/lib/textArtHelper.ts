@@ -159,21 +159,21 @@ export function getFontFamilyCss(family?: string): string {
 }
 
 export const FONT_WIDTH_FACTORS: Record<string, number> = {
-  Bungee: 0.92,
-  Anton: 0.65,
-  'Alfa Slab One': 0.88,
-  'Archivo Black': 0.84,
-  'Paytone One': 0.80,
-  Impact: 0.62,
-  'Arial Black': 0.82,
-  Montserrat: 0.78,
-  'Playfair Display': 0.68,
-  Cinzel: 0.76,
-  'Dancing Script': 0.55,
-  Caveat: 0.50,
-  Helvetica: 0.68,
-  Times: 0.65,
-  Courier: 0.60,
+  Bungee: 0.96,
+  Anton: 0.72,
+  'Alfa Slab One': 0.90,
+  'Archivo Black': 0.88,
+  'Paytone One': 0.84,
+  Impact: 0.70,
+  'Arial Black': 0.86,
+  Montserrat: 0.82,
+  'Playfair Display': 0.74,
+  Cinzel: 0.80,
+  'Dancing Script': 0.60,
+  Caveat: 0.55,
+  Helvetica: 0.74,
+  Times: 0.70,
+  Courier: 0.65,
 };
 
 /**
@@ -248,10 +248,10 @@ export function getSvgPathD(
 
   switch (curveType) {
     case 'arc-up': {
-      const R = Math.max(120, 420 - intensity * 290) + lineOffset;
+      const R = Math.max(140, 480 - intensity * 320) + lineOffset;
       const cy = midY + R;
 
-      const halfSpan = Math.PI * 0.72;
+      const halfSpan = Math.PI * 0.42;
       const startAngle = -Math.PI / 2 - halfSpan;
       const endAngle = -Math.PI / 2 + halfSpan;
 
@@ -263,12 +263,12 @@ export function getSvgPathD(
       return `M ${x1.toFixed(1)},${y1.toFixed(1)} A ${R.toFixed(1)},${R.toFixed(1)} 0 0,1 ${x2.toFixed(1)},${y2.toFixed(1)}`;
     }
     case 'arc-down': {
-      const R = Math.max(120, 420 - intensity * 290) - lineOffset;
+      const R = Math.max(140, 480 - intensity * 320) - lineOffset;
       const cy = midY - R;
 
-      const halfSpan = Math.PI * 0.72;
-      const startAngle = Math.PI / 2 - halfSpan;
-      const endAngle = Math.PI / 2 + halfSpan;
+      const halfSpan = Math.PI * 0.42;
+      const startAngle = Math.PI / 2 + halfSpan;
+      const endAngle = Math.PI / 2 - halfSpan;
 
       const x1 = cx + R * Math.cos(startAngle);
       const y1 = cy + R * Math.sin(startAngle);
@@ -331,19 +331,19 @@ export function getTextArtBoundingBox(
     let lMaxY: number;
 
     if (curveType === 'arc-up') {
-      const R = Math.max(120, 420 - intensity * 290) + lineOffset;
+      const R = Math.max(140, 480 - intensity * 320) + lineOffset;
       const cy = midY + R;
-      const theta = Math.min(Math.PI * 1.2, lineW / R);
-      const spanX = theta >= Math.PI ? R : R * Math.sin(theta / 2);
+      const theta = Math.min(Math.PI * 0.84, lineW / R);
+      const spanX = R * Math.sin(theta / 2);
       lMinX = 400 - spanX;
       lMaxX = 400 + spanX;
       lMinY = midY - fontSize * 0.88;
       lMaxY = Math.max(midY + fontSize * 0.25, cy - R * Math.cos(theta / 2) + fontSize * 0.25);
     } else if (curveType === 'arc-down') {
-      const R = Math.max(120, 420 - intensity * 290) - lineOffset;
+      const R = Math.max(140, 480 - intensity * 320) - lineOffset;
       const cy = midY - R;
-      const theta = Math.min(Math.PI * 1.2, lineW / R);
-      const spanX = theta >= Math.PI ? R : R * Math.sin(theta / 2);
+      const theta = Math.min(Math.PI * 0.84, lineW / R);
+      const spanX = R * Math.sin(theta / 2);
       lMinX = 400 - spanX;
       lMaxX = 400 + spanX;
       lMaxY = midY + fontSize * 0.25;
@@ -378,18 +378,21 @@ export function getTextArtBoundingBox(
 
   const strokeW = art.strokeWidth || 0;
   if (strokeW > 0) {
-    const sExtra = strokeW * 2.5;
+    const sExtra = strokeW * 3;
     minX -= sExtra;
     maxX += sExtra;
     minY -= sExtra;
     maxY += sExtra;
   }
   if (art.has3dShadow) {
-    maxX += 9;
-    maxY += 9;
+    // 3D Shadow extrusion offsets right and down: dx = 7.5px, dy = 7.5px plus opacity blur
+    maxX += 20;
+    maxY += 20;
   }
-  const padX = Math.max(8, fontSize * 0.06);
-  const padY = Math.max(8, fontSize * 0.06);
+  // Generous horizontal & vertical breathing room so wide uppercase glyphs (M, W, T, X)
+  // crossbars, serifs, and italics are NEVER clipped by the viewBox edge.
+  const padX = Math.max(24, Math.round(fontSize * 0.18));
+  const padY = Math.max(16, Math.round(fontSize * 0.12));
   minX -= padX;
   maxX += padX;
   minY -= padY;
