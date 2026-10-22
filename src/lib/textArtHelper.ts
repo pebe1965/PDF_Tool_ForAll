@@ -466,6 +466,7 @@ export function buildTextArtSvgMarkup(
             .map(
               (_, i) => `
           <text
+            xml:space="preserve"
             font-family='${fontFamilyCss}'
             font-size="${effectiveSize}"
             font-weight="900"
@@ -475,11 +476,7 @@ export function buildTextArtSvgMarkup(
             opacity="${0.16 + step * 0.12}"
             dx="${step * 1.5}"
             dy="${step * 1.5}"
-          >
-            <textPath href="#path_${uniqueId}_${i}" startOffset="50%" text-anchor="middle">
-              ${escapeXml(lines[i])}
-            </textPath>
-          </text>
+          ><textPath href="#path_${uniqueId}_${i}" startOffset="50%" text-anchor="middle" xml:space="preserve">${escapeXml(lines[i])}</textPath></text>
         `
             )
             .join('')
@@ -494,6 +491,7 @@ export function buildTextArtSvgMarkup(
           .map(
             (_, i) => `
         <text
+          xml:space="preserve"
           font-family='${fontFamilyCss}'
           font-size="${effectiveSize}"
           font-weight="900"
@@ -504,11 +502,7 @@ export function buildTextArtSvgMarkup(
           stroke-width="${strokeW * 2}"
           stroke-linejoin="round"
           stroke-linecap="round"
-        >
-          <textPath href="#path_${uniqueId}_${i}" startOffset="50%" text-anchor="middle">
-            ${escapeXml(lines[i])}
-          </textPath>
-        </text>
+        ><textPath href="#path_${uniqueId}_${i}" startOffset="50%" text-anchor="middle" xml:space="preserve">${escapeXml(lines[i])}</textPath></text>
       `
           )
           .join('')
@@ -521,17 +515,14 @@ export function buildTextArtSvgMarkup(
           .map(
             (_, i) => `
         <text
+          xml:space="preserve"
           font-family='${fontFamilyCss}'
           font-size="${effectiveSize}"
           font-weight="900"
           letter-spacing="${letterSpacing}px"
           text-anchor="middle"
           fill="${art.color || '#1D1D1F'}"
-        >
-          <textPath href="#path_${uniqueId}_${i}" startOffset="50%" text-anchor="middle">
-            ${escapeXml(lines[i])}
-          </textPath>
-        </text>
+        ><textPath href="#path_${uniqueId}_${i}" startOffset="50%" text-anchor="middle" xml:space="preserve">${escapeXml(lines[i])}</textPath></text>
       `
           )
           .join('')
@@ -542,17 +533,14 @@ export function buildTextArtSvgMarkup(
     .map(
       (_, i) => `
       <text
+        xml:space="preserve"
         font-family='${fontFamilyCss}'
         font-size="${effectiveSize}"
         font-weight="900"
         letter-spacing="${letterSpacing}px"
         text-anchor="middle"
         fill="${fillAttr}"
-      >
-        <textPath href="#path_${uniqueId}_${i}" startOffset="50%" text-anchor="middle">
-          ${escapeXml(lines[i])}
-        </textPath>
-      </text>
+      ><textPath href="#path_${uniqueId}_${i}" startOffset="50%" text-anchor="middle" xml:space="preserve">${escapeXml(lines[i])}</textPath></text>
     `
     )
     .join('');
@@ -607,7 +595,8 @@ function escapeXml(unsafe: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+    .replace(/'/g, '&apos;')
+    .replace(/ /g, '&#160;');
 }
 
 /**
