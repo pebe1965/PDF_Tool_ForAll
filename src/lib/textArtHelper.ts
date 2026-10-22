@@ -529,9 +529,10 @@ export function buildTextArtSvgMarkup(
       : '';
 
   // Build main text lines (all filled with gradient or image pattern)
-  const mainTextMarkup = lines
-    .map(
-      (_, i) => `
+  const buildMainTextLines = (fill: string) =>
+    lines
+      .map(
+        (_, i) => `
       <text
         xml:space="preserve"
         font-family='${fontFamilyCss}'
@@ -539,11 +540,29 @@ export function buildTextArtSvgMarkup(
         font-weight="900"
         letter-spacing="${letterSpacing}px"
         text-anchor="middle"
-        fill="${fillAttr}"
+        fill="${fill}"
       ><textPath href="#path_${uniqueId}_${i}" startOffset="50%" text-anchor="middle" xml:space="preserve">${escapeXml(lines[i])}</textPath></text>
     `
-    )
-    .join('');
+      )
+      .join('');
+
+  // WebKit (Safari) berechnet bei Text auf einem textPath den Füllbereich für
+  // Verläufe/Muster zu schmal – der letzte Buchstabe wurde dadurch halb
+  // abgeschnitten. Deshalb Verlauf/Foto als Rechteck zeichnen und mit dem Text
+  // als Maske ausstanzen. Volltonfarbe bleibt direkt am Text.
+  const usesPaintServer = fillAttr.startsWith('url(');
+  const maskId = `mask_${uniqueId}`;
+  const maskPad = Math.max(bbox.width, bbox.height);
+  const maskX = bbox.minX - maskPad;
+  const maskY = bbox.minY - maskPad;
+  const maskW = bbox.width + maskPad * 2;
+  const maskH = bbox.height + maskPad * 2;
+  const maskDef = usesPaintServer
+    ? `<mask id="${maskId}" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="${maskX}" y="${maskY}" width="${maskW}" height="${maskH}">${buildMainTextLines('#FFFFFF')}</mask>`
+    : '';
+  const mainTextMarkup = usesPaintServer
+    ? `<rect x="${maskX}" y="${maskY}" width="${maskW}" height="${maskH}" fill="${fillAttr}" mask="url(#${maskId})" />`
+    : buildMainTextLines(fillAttr);
 
   const preserveAspect =
     forceAspect === 'meet'
@@ -579,6 +598,7 @@ export function buildTextArtSvgMarkup(
         `
             : ''
         }
+        ${maskDef}
       </defs>
 
       ${shadowMarkup}
