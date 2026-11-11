@@ -35,11 +35,38 @@ const instructions: Record<keyof typeof clients, string> = {
   mobile: 'Kopiere die Textfassung. Öffne auf dem iPhone Einstellungen → Apps → Mail → Signatur oder in Outlook Einstellungen → Signatur.',
 };
 
+const legalTemplates = {
+  company: {
+    label: 'GmbH / UG',
+    text: 'Rechtsform und Sitz: [Angabe]\nRegistergericht und Registernummer: [Angabe]\nGeschäftsführung: [Name(n)]',
+    hint: 'Ergänze die Angaben deiner Gesellschaft und prüfe, welche weiteren Angaben für sie gelten.',
+    source: '§ 35a GmbHG',
+    url: 'https://www.gesetze-im-internet.de/gmbhg/__35a.html',
+  },
+  soleTrader: {
+    label: 'Einzelunternehmen ohne Handelsregistereintrag',
+    text: '[Vorname Nachname]\n[Straße Hausnummer]\n[PLZ Ort]',
+    hint: 'Verwende deinen ausgeschriebenen Namen und eine ladungsfähige Geschäftsanschrift. Wenn dein Name schon oben steht, kannst du ihn hier weglassen.',
+    source: 'IHK zu Geschäftsbriefen',
+    url: 'https://www.ihk.de/koblenz/unternehmensservice/recht/rechtsauskuenfte-von-a-z/allgemeine-infos/pflichtangaben-auf-geschaeftsbriefen-faxen-und-e-mails-3480308',
+  },
+  registeredTrader: {
+    label: 'Eingetragenes Einzelunternehmen (e.K.)',
+    text: '[Eingetragene Firma mit Rechtsformzusatz]\nOrt der Handelsniederlassung: [Ort]\nRegistergericht: [Gericht]\nHandelsregisternummer: [HRA-Nummer]',
+    hint: 'Übernimm den Firmennamen einschließlich Rechtsformzusatz aus dem Handelsregister.',
+    source: '§ 37a HGB',
+    url: 'https://www.gesetze-im-internet.de/hgb/__37a.html',
+  },
+};
+
+const smallBusinessNote = 'Gemäß § 19 UStG wird keine Umsatzsteuer ausgewiesen.';
+
 export function MailSignaturesView() {
   const [library, setLibrary] = useState<SignatureLibrary>();
   const [persistError, setPersistError] = useState(false);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [legalTemplate, setLegalTemplate] = useState<keyof typeof legalTemplates>('company');
   const [client, setClient] = useState<keyof typeof clients>('apple');
   const [previewMode, setPreviewMode] = useState('light');
   const [narrow, setNarrow] = useState(false);
@@ -78,6 +105,10 @@ export function MailSignaturesView() {
     preferLocalImage: true,
   }).html;
   const fileName = signatureFileName(project.title);
+  const template = legalTemplates[legalTemplate];
+  const legalText = project.legal.trim();
+  const canInsertTemplate = !legalText || legalText === smallBusinessNote;
+  const legalWithNote = [project.legal.trimEnd(), smallBusinessNote].filter(Boolean).join('\n\n');
   const blockOrder = project.blockOrder ?? Object.keys(signatureBlocks) as SignatureBlock[];
   const visibleBlocks = blockOrder.filter(key => key !== 'legal' || project.profile === 'business');
 
@@ -279,10 +310,21 @@ export function MailSignaturesView() {
             </div>
             {project.profile === 'business' && (
               <div className="mt-3 space-y-2">
-                <button className={buttonClass} disabled={Boolean(project.legal.trim())} onClick={() => update(project.id, {
-                  legal: 'Rechtsform und Sitz: [Angabe]\nRegistergericht und Registernummer: [Angabe]\nGeschäftsführung: [Name(n)]',
-                })}>GmbH-/UG-Textbaustein einsetzen</button>
-                <p className="text-xs text-slate-600">Ergänze die Angaben deiner Gesellschaft und prüfe, welche weiteren Angaben für sie gelten. <a className="underline" href="https://www.gesetze-im-internet.de/gmbhg/__35a.html" target="_blank" rel="noreferrer">§ 35a GmbHG</a></p>
+                <label className="block space-y-1 text-sm font-medium">
+                  <span>Textbaustein für Geschäftsangaben</span>
+                  <select className={inputClass} value={legalTemplate} onChange={event =>
+                    setLegalTemplate(event.currentTarget.value as keyof typeof legalTemplates)}>
+                    {Object.entries(legalTemplates).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}
+                  </select>
+                </label>
+                <button type="button" className={buttonClass} disabled={!canInsertTemplate}
+                  onClick={() => update(project.id, { legal: [template.text, legalText].filter(Boolean).join('\n\n') })}>Textbaustein einsetzen</button>
+                {!canInsertTemplate && <p className="text-xs text-slate-600">Leere das Feld „Pflichtangaben / Rechtstext“, um eine Vorlage einzusetzen.</p>}
+                <p className="text-xs text-slate-600">{template.hint} <a className="underline" href={template.url} target="_blank" rel="noreferrer">{template.source}</a></p>
+                <button type="button" className={buttonClass}
+                  disabled={project.legal.includes(smallBusinessNote) || legalWithNote.length > 12_000}
+                  onClick={() => update(project.id, { legal: legalWithNote })}>Kleinunternehmer-Hinweis ergänzen</button>
+                <p className="text-xs text-slate-600">Optional für die E-Mail-Signatur, wenn du die Kleinunternehmerregelung anwendest. Bei steuerfreien Kleinunternehmerumsätzen gehört der Hinweis auch auf die Rechnung. <a className="underline" href="https://www.gesetze-im-internet.de/ustdv_1980/__34a.html" target="_blank" rel="noreferrer">§ 34a UStDV</a></p>
               </div>
             )}
           </div>
