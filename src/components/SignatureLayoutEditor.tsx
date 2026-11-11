@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { ArrowDown, ArrowUp, Bold, GripVertical, Italic } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bold, ChevronDown, GripVertical, Italic } from 'lucide-react';
 import { signatureBlocks, signatureFonts, signatureTextStyle } from '../lib/mailSignatures';
 import type {
   renderSignature, SignatureBlock, SignatureFont, SignatureProject, SignatureTextStyle, SignatureTextTarget,
@@ -23,7 +23,11 @@ interface SignatureLayoutEditorProps {
 
 const controlClass = 'rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm';
 const iconButtonClass = 'rounded-md border border-slate-200 bg-white p-1.5 text-slate-600 hover:border-blue-400 hover:text-blue-700 disabled:opacity-30';
-const toggleClass = iconButtonClass + ' aria-pressed:border-blue-400 aria-pressed:bg-blue-50 aria-pressed:text-blue-700';
+const toolbarHeight = 'h-9';
+const toolbarControlClass = `${controlClass} ${toolbarHeight} appearance-none pr-7`;
+const toolbarLabelClass = 'relative flex flex-col gap-1 text-xs font-medium';
+const toolbarChevronClass = 'pointer-events-none absolute bottom-2.5 right-2 text-slate-500';
+const toggleClass = `${iconButtonClass} ${toolbarHeight} inline-flex w-9 items-center justify-center` + ' aria-pressed:border-blue-400 aria-pressed:bg-blue-50 aria-pressed:text-blue-700';
 
 export function SignatureLayoutEditor({
   project, blocks, narrow, onMove, onChangeStyle, onChangeArtworkWidth, onChangeText,
@@ -105,6 +109,17 @@ export function SignatureLayoutEditor({
         <div className="mt-3 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm font-semibold">{signatureBlocks[selected]}</span>
+            {selected === 'identity' && (
+              <label className={toolbarLabelClass}>
+                Textbereich
+                <select className={toolbarControlClass} value={identityTarget}
+                  onChange={event => setIdentityTarget(event.currentTarget.value as 'identity' | 'name')}>
+                  <option value="name">Name</option>
+                  <option value="identity">Kontaktdaten</option>
+                </select>
+                <ChevronDown size={16} className={toolbarChevronClass} aria-hidden="true" />
+              </label>
+            )}
             <div className="flex gap-1">
               <button type="button" className={iconButtonClass} disabled={selectedIndex <= 0}
                 aria-label={`${signatureBlocks[selected]} nach oben`}
@@ -123,45 +138,39 @@ export function SignatureLayoutEditor({
           )}
           {style && target && target !== 'textArt' && (
             <div className="flex flex-wrap items-end gap-2">
-              {selected === 'identity' && (
-                <label className="flex flex-col gap-1 text-xs font-medium">
-                  Textbereich
-                  <select className={controlClass} value={identityTarget}
-                    onChange={event => setIdentityTarget(event.currentTarget.value as 'identity' | 'name')}>
-                    <option value="name">Name</option>
-                    <option value="identity">Kontaktdaten</option>
-                  </select>
-                </label>
-              )}
-              <label className="flex flex-col gap-1 text-xs font-medium">
+              <label className={toolbarLabelClass}>
                 Schriftart
-                <select className={controlClass} value={style.font}
+                <select className={toolbarControlClass} value={style.font}
                   onChange={event => onChangeStyle(target, { font: event.currentTarget.value as SignatureFont })}>
                   {Object.keys(signatureFonts).map(font => <option key={font}>{font}</option>)}
                 </select>
+                <ChevronDown size={16} className={toolbarChevronClass} aria-hidden="true" />
               </label>
-              <label className="flex flex-col gap-1 text-xs font-medium">
+              <label className={toolbarLabelClass}>
                 Größe (px)
-                <select className={controlClass} value={style.size}
+                <select className={toolbarControlClass} value={style.size}
                   onChange={event => onChangeStyle(target, { size: Number(event.currentTarget.value) })}>
                   {fontSizes.map(size => <option key={size}>{size}</option>)}
                 </select>
+                <ChevronDown size={16} className={toolbarChevronClass} aria-hidden="true" />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium">
                 Schriftfarbe
-                <input type="color" className="h-8 w-12 rounded-md border border-slate-300 bg-white p-0.5" value={style.color}
+                <input type="color" className={`${toolbarHeight} w-12 rounded-lg border border-slate-300 bg-white p-0.5`} value={style.color}
                   onChange={event => onChangeStyle(target, { color: event.currentTarget.value })} />
               </label>
-              <button type="button" className={toggleClass} aria-label="Fett" aria-pressed={style.bold}
-                onClick={() => onChangeStyle(target, { bold: !style.bold })}><Bold size={17} /></button>
-              <button type="button" className={toggleClass} aria-label="Kursiv" aria-pressed={style.italic}
-                onClick={() => onChangeStyle(target, { italic: !style.italic })}><Italic size={17} /></button>
-              {project.textStyles?.[target] && (
-                <button type="button" className="text-xs text-blue-700 underline" onClick={() => onChangeStyle(target, null)}>
-                  Formatierung zurücksetzen
-                </button>
-              )}
+              <div className="flex gap-2">
+                <button type="button" className={toggleClass} aria-label="Fett" aria-pressed={style.bold}
+                  onClick={() => onChangeStyle(target, { bold: !style.bold })}><Bold size={17} /></button>
+                <button type="button" className={toggleClass} aria-label="Kursiv" aria-pressed={style.italic}
+                  onClick={() => onChangeStyle(target, { italic: !style.italic })}><Italic size={17} /></button>
+              </div>
             </div>
+          )}
+          {target && target !== 'textArt' && project.textStyles?.[target] && (
+            <button type="button" className="text-xs text-blue-700 underline" onClick={() => onChangeStyle(target, null)}>
+              Formatierung zurücksetzen
+            </button>
           )}
           {editableText && (
             <label className="flex flex-col gap-1 text-xs font-medium">
