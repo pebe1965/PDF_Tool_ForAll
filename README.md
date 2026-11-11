@@ -91,6 +91,8 @@ Dies erzeugt:
 
 Unter **Im Mailprogramm einrichten** findest du den HTML- und Klartext-Export sowie Anleitungen für die einzelnen Programme. Prüfe Grafiken und Umbrüche mit einer Testmail.
 
+**Apple Mail auf dem Mac:** Lade die `.eml` über **Für Apple Mail laden** herunter und öffne sie in Mail. Klicke in den Nachrichteninhalt, markiere ihn mit **⌘A** und kopiere ihn mit **⌘C**. Füge ihn unter **Mail → Einstellungen → Signaturen** mit **⌘V** ein. Deaktiviere dort die Anpassung an die Standardschrift, damit Mail die Schriftgestaltung übernimmt. Der Export bettet eine hochgeladene Grafik in der eingestellten Größe ein. Auch der separate Grafikdownload verwendet diese Größe.
+
 ### Browser-App auf GitHub Pages
 
 Wähle im Repository unter **Settings → Pages → Build and deployment** die Quelle **GitHub Actions**. Starte danach unter **Actions** den Workflow **Browser-App veröffentlichen** auf dem gewünschten Branch. Der Workflow baut die App für den Pages-Pfad. Ein lokaler Produktions-Build ist mit `npm run build -- --mode pages --base /PDF_Tool_ForAll/` möglich.

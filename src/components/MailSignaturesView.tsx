@@ -3,8 +3,8 @@ import { ArrowDown, ArrowUp, Copy, Download, ImagePlus, Mail, Plus, Upload } fro
 import { TextArtModal } from './TextArtModal';
 import { renderTextArtToPngBytes } from '../lib/textArtHelper';
 import {
-  createSignature, downloadSignature, exportSignatureProject, fields, httpsUrl,
-  importSignature, loadSignatureLibrary, readSignatureImage, renderSignature,
+  createAppleMailSignature, createSignature, downloadSignature, exportSignatureProject, fields, httpsUrl,
+  importSignature, loadSignatureLibrary, readSignatureImage, renderSignature, resizeSignatureImage,
   saveSignatureLibrary, signatureBlocks, signatureFileName,
 } from '../lib/mailSignatures';
 import type { SignatureBlock, SignatureFields, SignatureLibrary, SignatureProject } from '../lib/mailSignatures';
@@ -26,7 +26,7 @@ const clients = {
 };
 
 const instructions: Record<keyof typeof clients, string> = {
-  apple: 'Öffne Mail → Einstellungen → Signaturen, wähle das Konto und füge die kopierte Signatur ein. Falls ein Bild fehlt, ziehe die Bilddatei in den Editor.',
+  apple: 'Lade die .eml-Datei und öffne sie in Apple Mail. Klicke in den Nachrichteninhalt und drücke ⌘A und ⌘C. Öffne Mail → Einstellungen → Signaturen, deaktiviere dort für deine Signatur die Option für die Standardschrift und füge den Inhalt mit ⌘V ein.',
   thunderbird: 'Lade die HTML-Datei herunter. Wähle in den Konten-Einstellungen die Option für eine Signatur aus einer Datei und öffne die heruntergeladene Datei.',
   outlook: 'Öffne Einstellungen → Konten → Signaturen, erstelle eine Signatur, füge die Vorlage ein und speichere sie.',
   classic: 'Öffne eine neue Nachricht und wähle Signatur → Signaturen. Füge die Vorlage ein. Falls nötig, kopiere sie über Word und setze das Logo über den Bildbutton ein.',
@@ -138,6 +138,34 @@ export function MailSignaturesView() {
         selection?.addRange(range);
         preview.current.scrollIntoView({ block: 'nearest' });
       });
+    }
+  }
+
+  async function downloadAppleMail() {
+    if (!project) return;
+    setBusy(true);
+    try {
+      downloadSignature(`${fileName}.eml`, await createAppleMailSignature(project));
+      setStatus('Datei für Apple Mail heruntergeladen.');
+    } catch {
+      setStatus('Der Export ist fehlgeschlagen. Prüfe, ob die Grafik in der Vorschau angezeigt wird.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function downloadImage() {
+    if (!project) return;
+    setBusy(true);
+    try {
+      const { blob, width } = await resizeSignatureImage(project);
+      const extension = blob.type === 'image/jpeg' ? 'jpg' : 'png';
+      downloadSignature(`${fileName}-${width}px.${extension}`, blob);
+      setStatus('Grafik in der gewählten Größe heruntergeladen.');
+    } catch {
+      setStatus('Die Grafik konnte nicht skaliert werden.');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -348,7 +376,10 @@ export function MailSignaturesView() {
             </select>
             <p className="my-3 text-sm text-slate-600">{instructions[client]}</p>
             <div className="flex flex-wrap gap-2">
-              {client !== 'mobile' && <button className={client === 'thunderbird' ? buttonClass : primaryClass} disabled={!output.plain && !project.image && !httpsUrl(project.imageUrl)}
+              {client === 'apple' && <button className={primaryClass}
+                disabled={busy || (!output.plain && !project.image && !httpsUrl(project.imageUrl))}
+                onClick={() => void downloadAppleMail()}><Download size={16} /> Für Apple Mail laden (.eml)</button>}
+              {client !== 'mobile' && (client !== 'apple' || !project.image) && <button className={client === 'apple' || client === 'thunderbird' ? buttonClass : primaryClass} disabled={!output.plain && !project.image && !httpsUrl(project.imageUrl)}
                 onClick={() => void copy(true)}><Copy size={16} /> Formatiert kopieren</button>}
               <button className={client === 'mobile' ? primaryClass : buttonClass} disabled={!output.plain} onClick={() => void copy(false)}>Klartext kopieren</button>
               {client !== 'mobile' && <button className={client === 'thunderbird' ? primaryClass : buttonClass} onClick={() => downloadSignature(
@@ -358,12 +389,14 @@ export function MailSignaturesView() {
               <button className={buttonClass} disabled={!output.plain} onClick={() => downloadSignature(
                 `${fileName}.txt`, new Blob([output.plain], { type: 'text/plain;charset=utf-8' }),
               )}>Textdatei laden</button>
-              {project.image && <button className={buttonClass} onClick={async () => {
-                const image = await fetch(project.image).then(response => response.blob());
-                downloadSignature(`${fileName}.${image.type === 'image/jpeg' ? 'jpg' : 'png'}`, image);
-              }}>Grafik laden</button>}
+              {project.image && <button className={buttonClass} disabled={busy} onClick={() => void downloadImage()}>
+                Grafik laden ({project.imageWidth} px)
+              </button>}
             </div>
-            {(project.image || httpsUrl(project.imageUrl)) && client !== 'mobile' && (
+            {client === 'apple' && !project.image && httpsUrl(project.imageUrl) && (
+              <p className="mt-3 text-xs text-slate-600">Lade die Grafik als Datei hoch, damit sie beim Apple-Mail-Export eingebettet wird.</p>
+            )}
+            {(project.image || httpsUrl(project.imageUrl)) && client !== 'mobile' && client !== 'apple' && (
               <p className="mt-3 text-xs text-slate-600">Prüfe die Grafik mit einer Testmail. Je nach Mailprogramm kannst du sie separat im Signatur-Editor einsetzen.</p>
             )}
           </div>

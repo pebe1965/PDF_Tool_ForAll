@@ -82,7 +82,17 @@ function escapeHtml(value: string): string {
   ));
 }
 
-export function renderSignature(project: SignatureProject, options: { hideImage?: boolean; preferLocalImage?: boolean } = {}) {
+function signatureImageWidth(width: number) {
+  return Math.round(Math.max(32, Math.min(240, width)));
+}
+
+type SignatureRenderOptions = {
+  hideImage?: boolean;
+  preferLocalImage?: boolean;
+  inlineImage?: { contentId: string; height: number };
+};
+
+export function renderSignature(project: SignatureProject, options: SignatureRenderOptions = {}) {
   const color = /^#[0-9a-f]{6}$/i.test(project.color) ? project.color : '#145a8d';
   const font = project.font === 'Georgia' ? 'Georgia, serif' : `${project.font}, sans-serif`;
   const style = `font-family:${font};font-size:14px;line-height:1.45;color:#24272c;overflow-wrap:anywhere;`;
@@ -107,10 +117,13 @@ export function renderSignature(project: SignatureProject, options: { hideImage?
   ].filter(Boolean).join('<br>');
   const localImage = imageDataUrl(project.image);
   const remoteImage = httpsUrl(project.imageUrl);
-  const src = options.preferLocalImage ? localImage || remoteImage : remoteImage || localImage;
-  const width = Math.max(32, Math.min(240, project.imageWidth));
+  const src = options.inlineImage
+    ? `cid:${options.inlineImage.contentId}`
+    : (options.preferLocalImage ? localImage || remoteImage : remoteImage || localImage);
+  const width = signatureImageWidth(project.imageWidth);
+  const height = options.inlineImage ? ` height="${options.inlineImage.height}"` : '';
   const image = src && !options.hideImage
-    ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(project.imageAlt.trim())}" width="${width}" style="display:block;width:${width}px;max-width:100%;height:auto;border:0;">`
+    ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(project.imageAlt.trim())}" width="${width}"${height} style="display:block;width:${width}px;max-width:100%;height:auto;border:0;">`
     : '';
   const identityBlock = project.layout === 'columns' && image && identity
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr><td valign="top" style="padding:0 12px 0 0;">${image}</td><td valign="top" style="${style}">${identity}</td></tr></table>`
@@ -134,6 +147,73 @@ export function renderSignature(project: SignatureProject, options: { hideImage?
     html: `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;max-width:100%;">${rows}</table>`,
     plain: ordered.map(block => block.plain.trim()).filter(Boolean).join('\n\n'),
   };
+}
+
+export async function resizeSignatureImage(project: SignatureProject) {
+  const src = imageDataUrl(project.image);
+  if (!src) throw new Error('Die hochgeladene Grafik konnte nicht gelesen werden.');
+
+  const image = new Image();
+  image.src = src;
+  await image.decode();
+  const width = signatureImageWidth(project.imageWidth);
+  const height = Math.max(1, Math.round(image.naturalHeight * width / image.naturalWidth));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Die Grafik konnte nicht skaliert werden.');
+
+  context.drawImage(image, 0, 0, width, height);
+  const mimeType = src.startsWith('data:image/jpeg') ? 'image/jpeg' : 'image/png';
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(result => {
+      if (result) resolve(result);
+      else reject(new Error('Die Grafik konnte nicht skaliert werden.'));
+    }, mimeType, 0.92);
+  });
+  return { blob, width, height };
+}
+
+function mimeBase64(bytes: Uint8Array) {
+  const lines: string[] = [];
+  // 57 bytes of input produce 76 Base64 characters, the MIME line limit.
+  for (let offset = 0; offset < bytes.length; offset += 57) {
+    lines.push(btoa(String.fromCharCode(...bytes.subarray(offset, offset + 57))));
+  }
+  return lines.join('\r\n');
+}
+
+export async function createAppleMailSignature(project: SignatureProject): Promise<Blob> {
+  const image = project.image ? await resizeSignatureImage(project) : undefined;
+  const contentId = 'logo@pdf-tool-forall.invalid';
+  const { html } = renderSignature(project, {
+    inlineImage: image ? { contentId, height: image.height } : undefined,
+  });
+  const htmlDocument = `<!doctype html><html lang="de"><head><meta charset="utf-8"></head><body>${html}</body></html>`;
+  const htmlPart = [
+    'Content-Type: text/html; charset=utf-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    mimeBase64(new TextEncoder().encode(htmlDocument)),
+  ];
+  const headers = ['MIME-Version: 1.0', 'Subject: E-Mail-Signatur'];
+  const boundary = 'pdf-tool-forall-signature';
+  const parts = image ? [
+    `Content-Type: multipart/related; boundary="${boundary}"; type="text/html"`,
+    '',
+    `--${boundary}`,
+    ...htmlPart,
+    `--${boundary}`,
+    `Content-Type: ${image.blob.type}`,
+    'Content-Transfer-Encoding: base64',
+    `Content-ID: <${contentId}>`,
+    `Content-Disposition: inline; filename="signatur-grafik.${image.blob.type === 'image/jpeg' ? 'jpg' : 'png'}"`,
+    '',
+    mimeBase64(new Uint8Array(await image.blob.arrayBuffer())),
+    `--${boundary}--`,
+  ] : htmlPart;
+  return new Blob([[...headers, ...parts, ''].join('\r\n')], { type: 'message/rfc822' });
 }
 
 export function signatureFileName(title: string): string {
@@ -175,7 +255,7 @@ export async function importSignature(file: File): Promise<SignatureProject> {
     if (['Arial', 'Georgia', 'Verdana'].includes(source.font)) project.font = source.font;
     if (typeof source.color === 'string' && /^#[0-9a-f]{6}$/i.test(source.color)) project.color = source.color;
     if (typeof source.image === 'string') project.image = imageDataUrl(source.image);
-    if (Number.isFinite(source.imageWidth)) project.imageWidth = Math.max(32, Math.min(240, source.imageWidth));
+    if (Number.isFinite(source.imageWidth)) project.imageWidth = signatureImageWidth(source.imageWidth);
     if (Array.isArray(source.blockOrder) && source.blockOrder.length === defaultOrder.length &&
         defaultOrder.every(key => source.blockOrder.includes(key))) {
       project.blockOrder = source.blockOrder;
