@@ -17,6 +17,7 @@ import {
   FolderOpen,
   Image as ImageIcon,
   Sparkles,
+  AtSign,
   Undo2,
   Redo2,
   Highlighter,
@@ -100,6 +101,8 @@ interface PdfEditorViewProps {
   onPdfUpdate: (bytes: ArrayBuffer, fileName: string) => void;
   onOpenMergeTab?: () => void;
   onOpenToolsTab?: () => void;
+  onOpenMailSignatures?: () => void;
+  isActive?: boolean;
   onGoHome?: () => void;
   isHomeView?: boolean;
   onGoToEditor?: () => void;
@@ -120,6 +123,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   onPdfUpdate,
   onOpenMergeTab,
   onOpenToolsTab,
+  onOpenMailSignatures,
+  isActive = true,
   onGoHome,
   isHomeView = false,
   onGoToEditor,
@@ -329,6 +334,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
   // Keyboard shortcuts: Cmd+S (Save), Cmd+Z (Undo), Cmd+Shift+Z / Cmd+Y (Redo), Cmd+F (Search), Delete, Arrow/Page Navigation
   useEffect(() => {
+    if (!isActive) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
@@ -396,7 +402,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo, selectedAnnId, pdfBytes, pushAnnotationsChange, numPages, currentPage, handlePageChange]);
+  }, [isActive, handleUndo, handleRedo, selectedAnnId, pdfBytes, pushAnnotationsChange, numPages, currentPage, handlePageChange]);
 
   // Reload an updated PDF buffer into pdfjs viewer & inspect AcroForm fields
   const reloadPdfFromBuffer = async (
@@ -1050,6 +1056,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
   // Clipboard paste listener (Cmd+V / Ctrl+V for screenshots AND text / AI research)
   useEffect(() => {
+    if (!isActive) return;
     const handlePaste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
@@ -1079,7 +1086,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [pdfBytes, currentPage, canvasDimensions, insertPastedTextContent]);
+  }, [isActive, pdfBytes, currentPage, canvasDimensions, insertPastedTextContent]);
 
   // Add signature
   const handleAddSignature = (dataUrl: string) => {
@@ -1595,7 +1602,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
             </div>
           )}
 
-          <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
             {/* Card 1: Open existing PDF or .pdftool Project */}
             <div
               onDragOver={handleDragOver}
@@ -1684,6 +1691,20 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                 Zu den Werkzeugen
               </button>
             </div>
+
+            {onOpenMailSignatures && (
+              <button
+                type="button"
+                onClick={onOpenMailSignatures}
+                className="p-6 bg-white rounded-3xl border-2 border-[#D2D2D7] hover:border-[#0071E3] transition-all flex flex-col items-center text-center shadow-lg"
+              >
+                <span className="w-14 h-14 rounded-2xl bg-blue-100 text-[#0071E3] grid place-items-center mb-4">
+                  <AtSign size={28} aria-hidden="true" />
+                </span>
+                <span className="text-base font-bold mb-2">E-Mail-Signaturen</span>
+                <span className="text-xs text-[#86868B]">Private und geschäftliche Signaturen gestalten, sichern und exportieren.</span>
+              </button>
+            )}
           </div>
         </div>
       ) : (

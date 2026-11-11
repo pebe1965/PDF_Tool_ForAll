@@ -298,7 +298,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     )}
 
                     {/* 1-Click Direct In-App Update */}
-                    <div className="pt-1 space-y-2">
+                    {import.meta.env.MODE !== 'pages' && <div className="pt-1 space-y-2">
                       <button
                         onClick={handleSelfUpdate}
                         disabled={selfUpdating}
@@ -317,7 +317,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           {selfUpdateMsg}
                         </div>
                       )}
-                    </div>
+                    </div>}
 
                     {/* Action Download Buttons */}
                     <div className="flex flex-col sm:flex-row gap-2 pt-0.5">

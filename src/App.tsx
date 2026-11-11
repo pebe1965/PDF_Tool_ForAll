@@ -1,9 +1,13 @@
-import React, { useState } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import { Header, AppTab } from './components/Header';
 import { PdfEditorView } from './components/PdfEditorView';
 import { PdfMergeView } from './components/PdfMergeView';
 import { PdfToolsView } from './components/PdfToolsView';
 import { SettingsModal } from './components/SettingsModal';
+
+const MailSignaturesView = lazy(() => import('./components/MailSignaturesView').then(
+  module => ({ default: module.MailSignaturesView }),
+));
 
 export function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('home');
@@ -46,6 +50,8 @@ export function App() {
             onPdfUpdate={handleEditorPdfUpdate}
             onOpenMergeTab={() => setActiveTab('merge')}
             onOpenToolsTab={() => setActiveTab('tools')}
+            onOpenMailSignatures={() => setActiveTab('mail-signatures')}
+            isActive={activeTab === 'home' || activeTab === 'editor'}
             onGoHome={() => setActiveTab('home')}
             isHomeView={activeTab === 'home'}
             onGoToEditor={() => setActiveTab('editor')}
@@ -71,6 +77,11 @@ export function App() {
             onGoHome={() => setActiveTab('home')}
           />
         </div>
+        {activeTab === 'mail-signatures' && (
+          <Suspense fallback={<p className="p-6">Signaturbereich wird geladen …</p>}>
+            <MailSignaturesView />
+          </Suspense>
+        )}
       </main>
 
       {/* Global Settings & Update Check Modal */}

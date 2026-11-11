@@ -84,3 +84,13 @@ Dies erzeugt:
 - `PDF_Tool_ForAll.app` (macOS App Bundle)
 - `PDF_Tool_ForAll.dmg` (macOS Installations-Image)
 - `PDF_Tool_ForAll_Windows.zip` (Windows Komplettpaket)
+
+## E-Mail-Signaturen
+
+Öffne **E-Mail-Signaturen** im Hauptmenü. Wähle **Privat** oder **Geschäftlich** und gestalte die Signatur mit Text, Links und optional einer Grafik. Entwürfe liegen in diesem Browser. Über **Projekt sichern** erhältst du eine bearbeitbare `.signatur.json` inklusive lokal hinzugefügter Grafik. Diese Datei lässt sich über **Projekt oder Signatur öffnen** auch in einem anderen Browser laden. HTML- und Textdateien lassen sich als Ausgangspunkt importieren.
+
+Unter **Im Mailprogramm einrichten** findest du den HTML- und Klartext-Export sowie Anleitungen für die einzelnen Programme. Prüfe Grafiken und Umbrüche mit einer Testmail.
+
+### Browser-App auf GitHub Pages
+
+Wähle im Repository unter **Settings → Pages → Build and deployment** die Quelle **GitHub Actions**. Starte danach unter **Actions** den Workflow **Browser-App veröffentlichen** auf dem gewünschten Branch. Der Workflow baut die App für den Pages-Pfad. Ein lokaler Produktions-Build ist mit `npm run build -- --mode pages --base /PDF_Tool_ForAll/` möglich.

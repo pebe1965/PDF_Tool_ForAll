@@ -1,9 +1,9 @@
 import React from 'react';
-import { Home, FileEdit, FileStack, ShieldCheck, Sparkles, Settings, Wrench } from 'lucide-react';
+import { Home, FileEdit, FileStack, ShieldCheck, Sparkles, Settings, Wrench, Mail } from 'lucide-react';
 import { APP_VERSION } from '../config';
 import { UpdateNotification } from './UpdateNotification';
 
-export type AppTab = 'home' | 'editor' | 'merge' | 'tools';
+export type AppTab = 'home' | 'editor' | 'merge' | 'tools' | 'mail-signatures';
 
 interface HeaderProps {
   activeTab: AppTab;
@@ -21,7 +21,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
 }) => {
   return (
-    <header className="h-[68px] bg-white/80 backdrop-blur-md border-b border-[#D2D2D7]/60 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 select-none gap-2">
+    <header className="min-h-[68px] flex-wrap py-2 lg:flex-nowrap bg-white/80 backdrop-blur-md border-b border-[#D2D2D7]/60 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 select-none gap-2">
       {/* Brand Logo & Name (Klickbar für Rückkehr zur Startseite) */}
       <button
         onClick={() => onTabChange('home')}
@@ -47,7 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
       </button>
 
       {/* Main Mode Switcher Navigation */}
-      <nav className="flex items-center bg-[#F5F5F7] p-1 rounded-2xl border border-[#E8E8ED] flex-shrink-0">
+      <nav aria-label="Werkzeugbereiche" className="order-last flex w-full min-w-0 flex-wrap items-center lg:order-none lg:w-auto lg:flex-nowrap lg:overflow-x-auto bg-[#F5F5F7] p-1 rounded-2xl border border-[#E8E8ED]">
         <button
           onClick={() => onTabChange('home')}
           className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition whitespace-nowrap cursor-pointer ${
@@ -106,6 +106,15 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Wrench size={16} className="flex-shrink-0" />
           <span>Werkzeuge<span className="hidden lg:inline"> & Business</span></span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onTabChange('mail-signatures')}
+          aria-current={activeTab === 'mail-signatures' ? 'page' : undefined}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition ${activeTab === 'mail-signatures' ? 'bg-white text-[#0071E3] shadow-sm' : 'text-[#86868B] hover:text-[#1D1D1F]'}`}
+        >
+          <Mail size={16} className="flex-shrink-0" />
+          <span>E-Mail-Signaturen</span>
         </button>
       </nav>
 
