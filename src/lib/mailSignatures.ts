@@ -122,8 +122,10 @@ export function renderSignature(project: SignatureProject, options: SignatureRen
     : (options.preferLocalImage ? localImage || remoteImage : remoteImage || localImage);
   const width = signatureImageWidth(project.imageWidth);
   const height = options.inlineImage ? ` height="${options.inlineImage.height}"` : '';
+  // Mail uses the alternative text when naming an inline image copied from a message.
+  const imageAlt = project.imageAlt.trim() || (options.inlineImage ? 'Signaturgrafik' : '');
   const image = src && !options.hideImage
-    ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(project.imageAlt.trim())}" width="${width}"${height} style="display:block;width:${width}px;max-width:100%;height:auto;border:0;">`
+    ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(imageAlt)}" width="${width}"${height} style="display:block;width:${width}px;max-width:100%;height:auto;border:0;">`
     : '';
   const identityBlock = project.layout === 'columns' && image && identity
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr><td valign="top" style="padding:0 12px 0 0;">${image}</td><td valign="top" style="${style}">${identity}</td></tr></table>`
@@ -199,16 +201,17 @@ export async function createAppleMailSignature(project: SignatureProject): Promi
   ];
   const headers = ['MIME-Version: 1.0', 'Subject: E-Mail-Signatur'];
   const boundary = 'pdf-tool-forall-signature';
+  const imageName = image?.blob.type === 'image/jpeg' ? 'signatur-grafik.jpg' : 'signatur-grafik.png';
   const parts = image ? [
     `Content-Type: multipart/related; boundary="${boundary}"; type="text/html"`,
     '',
     `--${boundary}`,
     ...htmlPart,
     `--${boundary}`,
-    `Content-Type: ${image.blob.type}`,
+    `Content-Type: ${image.blob.type}; name="${imageName}"`,
     'Content-Transfer-Encoding: base64',
     `Content-ID: <${contentId}>`,
-    `Content-Disposition: inline; filename="signatur-grafik.${image.blob.type === 'image/jpeg' ? 'jpg' : 'png'}"`,
+    `Content-Disposition: inline; filename="${imageName}"`,
     '',
     mimeBase64(new Uint8Array(await image.blob.arrayBuffer())),
     `--${boundary}--`,
