@@ -22,7 +22,7 @@ jobs:
       - uses: actions/configure-pages@v5
         id: pages
       - run: npm ci
-      - run: npm run build -- --mode pages --base "${PAGES_BASE:-/}"
+      - run: npm run build -- --mode pages --base "${PAGES_BASE%/}/"
         env:
           PAGES_BASE: ${{ steps.pages.outputs.base_path }}
       - uses: actions/upload-pages-artifact@v4
