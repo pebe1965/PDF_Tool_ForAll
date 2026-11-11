@@ -87,11 +87,11 @@ Dies erzeugt:
 
 ## E-Mail-Signaturen
 
-Öffne **E-Mail-Signaturen** im Hauptmenü. Wähle **Privat** oder **Geschäftlich** und gestalte die Signatur mit Text, Links und optional einer Grafik. Entwürfe liegen in diesem Browser. Über **Projekt sichern** erhältst du eine bearbeitbare `.signatur.json` inklusive lokal hinzugefügter Grafik. Diese Datei lässt sich über **Projekt oder Signatur öffnen** auch in einem anderen Browser laden. HTML- und Textdateien lassen sich als Ausgangspunkt importieren.
+Öffne **E-Mail-Signaturen** im Hauptmenü. Wähle **Privat** oder **Geschäftlich** und gestalte die Signatur mit Text, Links, Logo und einem eigenen TextArt-Block. Unter **Layout bearbeiten** kannst du Blöcke ziehen oder mit den Pfeiltasten der Oberfläche verschieben und Texte pro Block formatieren. Entwürfe liegen in diesem Browser. Über **Projekt sichern** erhältst du eine bearbeitbare `.signatur.json` inklusive Grafiken und Formatierung. Diese Datei lässt sich über **Projekt oder Signatur öffnen** auch in einem anderen Browser laden. HTML- und Textdateien lassen sich als Ausgangspunkt importieren.
 
 Unter **Im Mailprogramm einrichten** findest du den HTML- und Klartext-Export sowie Anleitungen für die einzelnen Programme. Prüfe Grafiken und Umbrüche mit einer Testmail.
 
-**Apple Mail auf dem Mac:** Lade die `.eml` über **Für Apple Mail laden** herunter und öffne sie in Mail. Klicke in den Nachrichteninhalt, markiere ihn mit **⌘A** und kopiere ihn mit **⌘C**. Füge ihn unter **Mail → Einstellungen → Signaturen** mit **⌘V** ein. Deaktiviere dort die Anpassung an die Standardschrift, damit Mail die Schriftgestaltung übernimmt. Der Export bettet eine hochgeladene Grafik in der eingestellten Größe ein. Auch der separate Grafikdownload verwendet diese Größe.
+**Apple Mail auf dem Mac:** Lade die `.eml` über **Für Apple Mail laden** herunter und öffne sie in Mail. Klicke in den Nachrichteninhalt, markiere ihn mit **⌘A** und kopiere ihn mit **⌘C**. Füge ihn unter **Mail → Einstellungen → Signaturen** mit **⌘V** ein. Deaktiviere dort die Anpassung an die Standardschrift, damit Mail die Schriftgestaltung übernimmt. Der Export bettet ein hochgeladenes Logo und TextArt in der jeweils eingestellten Größe ein. Auch der separate Grafikdownload verwendet die eingestellte Logogröße.
 
 ### Browser-App auf GitHub Pages
 

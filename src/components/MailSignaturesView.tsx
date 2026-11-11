@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Copy, Download, ImagePlus, Mail, Plus, Upload } from 'lucide-react';
+import { Copy, Download, ImagePlus, Mail, Plus, Upload } from 'lucide-react';
 import { TextArtModal } from './TextArtModal';
+import { SignatureLayoutEditor } from './SignatureLayoutEditor';
 import { renderTextArtToPngBytes } from '../lib/textArtHelper';
 import {
   createAppleMailSignature, createSignature, downloadSignature, exportSignatureProject, fields, httpsUrl,
   importSignature, loadSignatureLibrary, readSignatureImage, renderSignature, resizeSignatureImage,
-  saveSignatureLibrary, signatureBlocks, signatureFileName,
+  saveSignatureLibrary, signatureBlockOrder, signatureFileName, signatureFonts,
 } from '../lib/mailSignatures';
-import type { SignatureBlock, SignatureFields, SignatureLibrary, SignatureProject } from '../lib/mailSignatures';
+import type { SignatureBlock, SignatureFields, SignatureLibrary, SignatureProject, SignatureTextStyle, SignatureTextTarget } from '../lib/mailSignatures';
 import type { TextArtAnnotation } from '../types/pdf';
 
 const inputClass = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm';
@@ -68,7 +69,7 @@ export function MailSignaturesView() {
   const [busy, setBusy] = useState(false);
   const [legalTemplate, setLegalTemplate] = useState<keyof typeof legalTemplates>('company');
   const [client, setClient] = useState<keyof typeof clients>('apple');
-  const [previewMode, setPreviewMode] = useState('light');
+  const [previewMode, setPreviewMode] = useState('edit');
   const [narrow, setNarrow] = useState(false);
   const [textArtOpen, setTextArtOpen] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
@@ -100,17 +101,19 @@ export function MailSignaturesView() {
   if (!library || !project) return <p className="p-6">Signaturen werden geladen …</p>;
 
   const output = renderSignature(project);
-  const previewHtml = renderSignature(project, {
+  const previewOutput = renderSignature(project, {
     hideImage: previewMode === 'blocked',
     preferLocalImage: true,
-  }).html;
+  });
   const fileName = signatureFileName(project.title);
   const template = legalTemplates[legalTemplate];
   const legalText = project.legal.trim();
   const canInsertTemplate = !legalText || legalText === smallBusinessNote;
   const legalWithNote = [project.legal.trimEnd(), smallBusinessNote].filter(Boolean).join('\n\n');
-  const blockOrder = project.blockOrder ?? Object.keys(signatureBlocks) as SignatureBlock[];
-  const visibleBlocks = blockOrder.filter(key => key !== 'legal' || project.profile === 'business');
+  const layoutBlocks = previewOutput.blocks.filter(({ key }) =>
+    (key !== 'legal' || project.profile === 'business') && (key !== 'textArt' || project.textArt),
+  );
+  const hasGraphics = Boolean(project.image || project.textArt || httpsUrl(project.imageUrl));
 
   function update(id: string, changes: Partial<SignatureProject>) {
     setLibrary(previous => previous && ({
@@ -119,15 +122,23 @@ export function MailSignaturesView() {
     }));
   }
 
-  function moveBlock(key: SignatureBlock, direction: number) {
+  function moveBlock(source: SignatureBlock, target: SignatureBlock, after: boolean) {
+    if (!project || source === target) return;
+    const order = signatureBlockOrder(project.blockOrder).filter(block => block !== source);
+    order.splice(order.indexOf(target) + Number(after), 0, source);
+    update(project.id, { blockOrder: order });
+  }
+
+  function changeTextStyle(target: SignatureTextTarget, style: Partial<SignatureTextStyle> | null) {
     if (!project) return;
-    const neighbor = visibleBlocks[visibleBlocks.indexOf(key) + direction];
-    if (!neighbor) return;
-    const updated = [...blockOrder];
-    const from = updated.indexOf(key);
-    const to = updated.indexOf(neighbor);
-    [updated[from], updated[to]] = [updated[to], updated[from]];
-    update(project.id, { blockOrder: updated });
+    const textStyles = { ...project.textStyles };
+    if (style) {
+      textStyles[target] = { ...textStyles[target], ...style };
+      if (style.size !== undefined) textStyles[target].size = Math.max(9, Math.min(36, style.size));
+    } else {
+      delete textStyles[target];
+    }
+    update(project.id, { textStyles });
   }
 
   function add(item: SignatureProject) {
@@ -214,10 +225,10 @@ export function MailSignaturesView() {
     }
   }
 
-  async function addImage(file: File, id: string, alt?: string) {
+  async function addImage(file: File, id: string) {
     setBusy(true);
     try {
-      update(id, { image: await readSignatureImage(file), ...(alt ? { imageAlt: alt } : {}) });
+      update(id, { image: await readSignatureImage(file) });
       setStatus('Grafik übernommen.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Die Grafik konnte nicht geöffnet werden.');
@@ -226,11 +237,14 @@ export function MailSignaturesView() {
     }
   }
 
-  async function addTextArt(data: Omit<TextArtAnnotation, 'id' | 'pageNumber' | 'x' | 'y'>, id: string) {
+  async function addTextArt(data: Omit<TextArtAnnotation, 'id' | 'pageNumber' | 'x' | 'y'>, item: SignatureProject) {
     setBusy(true);
     try {
-      const bytes = await renderTextArtToPngBytes({ ...data, id, pageNumber: 1, x: 0, y: 0 }, 240, 96);
-      await addImage(new File([bytes], 'TextArt.png', { type: 'image/png' }), id, data.text);
+      const bytes = await renderTextArtToPngBytes({ ...data, id: item.id, pageNumber: 1, x: 0, y: 0 }, 240, 96);
+      const image = await readSignatureImage(new File([bytes], 'TextArt.png', { type: 'image/png' }));
+      update(item.id, { textArt: { image, alt: data.text.slice(0, 500), width: item.textArt?.width ?? 160 } });
+      setPreviewMode('edit');
+      setStatus('TextArt als eigener Block eingefügt.');
     } catch {
       setStatus('TextArt konnte nicht als Grafik übernommen werden.');
     } finally {
@@ -340,10 +354,10 @@ export function MailSignaturesView() {
                 </select>
               </label>
               <label className="space-y-1 text-sm font-medium">
-                <span>Schrift</span>
+                <span>Standardschrift</span>
                 <select className={inputClass} value={project.font} onChange={event =>
                   update(project.id, { font: event.currentTarget.value as SignatureProject['font'] })}>
-                  <option>Arial</option><option>Georgia</option><option>Verdana</option>
+                  {Object.keys(signatureFonts).map(font => <option key={font}>{font}</option>)}
                 </select>
               </label>
               <label className="space-y-1 text-sm font-medium">
@@ -354,7 +368,8 @@ export function MailSignaturesView() {
             </div>
             <div className="my-3 flex flex-wrap gap-2">
               <button className={buttonClass} disabled={busy} onClick={() => imageInput.current?.click()}><ImagePlus size={16} /> Foto, Logo oder Banner</button>
-              <button className={buttonClass} disabled={busy} onClick={() => setTextArtOpen(true)}>TextArt erstellen</button>
+              <button className={buttonClass} disabled={busy} onClick={() => setTextArtOpen(true)}>{project.textArt ? 'TextArt ersetzen' : 'TextArt erstellen'}</button>
+              {project.textArt && <button className={buttonClass} disabled={busy} onClick={() => update(project.id, { textArt: undefined })}>TextArt entfernen</button>}
               {(project.image || project.imageUrl) && <button className={buttonClass} disabled={busy} onClick={() => update(project.id, { image: '', imageUrl: '' })}>Grafik entfernen</button>}
               <input ref={imageInput} className="hidden" type="file" accept="image/png,image/jpeg" onChange={event => {
                 const file = event.currentTarget.files?.[0];
@@ -372,44 +387,44 @@ export function MailSignaturesView() {
               </label>
             </div>
             {project.imageUrl && !httpsUrl(project.imageUrl) && <p className="mt-2 text-sm text-amber-800">Gib eine vollständige HTTPS-Adresse für die Grafik ein.</p>}
-            <h4 className="mb-2 mt-4 text-sm font-semibold">Reihenfolge</h4>
-            <ol className="divide-y divide-slate-100 rounded-lg border border-slate-200 px-3">
-              {visibleBlocks.map((key, index) => (
-                <li key={key} className="flex items-center justify-between gap-2 py-1 text-sm">
-                  <span>{signatureBlocks[key]}</span>
-                  <span className="flex gap-1">
-                    <button type="button" className={buttonClass} disabled={index === 0}
-                      aria-label={`${signatureBlocks[key]} nach oben`} onClick={() => moveBlock(key, -1)}><ArrowUp size={14} /></button>
-                    <button type="button" className={buttonClass} disabled={index === visibleBlocks.length - 1}
-                      aria-label={`${signatureBlocks[key]} nach unten`} onClick={() => moveBlock(key, 1)}><ArrowDown size={14} /></button>
-                  </span>
-                </li>
-              ))}
-            </ol>
           </div>
         </div>
         <div className="min-w-0 space-y-5">
           <div className={cardClass}>
-            <h3 className="mb-3 font-semibold">Vorschau</h3>
+            <h3 className="mb-3 font-semibold">Layout-Editor und Vorschau</h3>
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <select className={`${inputClass} w-auto`} aria-label="Vorschau-Modus" value={previewMode} onChange={event => setPreviewMode(event.currentTarget.value)}>
-                <option value="light">Hell</option>
+                <option value="edit">Layout bearbeiten</option>
+                <option value="light">Vorschau hell</option>
                 <option value="dark">Dunkel</option>
                 <option value="blocked">Ohne Bilder</option>
                 <option value="plain">Klartext</option>
               </select>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={narrow} onChange={event => setNarrow(event.currentTarget.checked)} /> Schmale Ansicht</label>
             </div>
-            <div className={`overflow-auto rounded-xl border border-slate-200 p-3 ${narrow ? 'max-w-[320px]' : ''} ${previewMode === 'dark' ? 'bg-slate-900' : 'bg-slate-50'}`}>
+            {previewMode === 'edit' ? (
+              <SignatureLayoutEditor
+                key={project.id}
+                project={project}
+                blocks={layoutBlocks}
+                narrow={narrow}
+                onMove={moveBlock}
+                onChangeStyle={changeTextStyle}
+                onChangeText={(field, value) => update(project.id, { [field]: value })}
+                onChangeArtworkWidth={width => {
+                  if (project.textArt) update(project.id, { textArt: { ...project.textArt, width } });
+                }}
+              />
+            ) : <div className={`overflow-auto rounded-xl border border-slate-200 p-3 ${narrow ? 'max-w-[320px]' : ''} ${previewMode === 'dark' ? 'bg-slate-900' : 'bg-slate-50'}`}>
               <div ref={preview} className={`break-words ${previewMode === 'dark' ? '[&_td]:!text-slate-100 [&_strong]:!text-blue-300 [&_a]:!text-blue-300' : ''}`}
                 onClick={event => {
                   if (event.target instanceof Element && event.target.closest('a')) event.preventDefault();
                 }}>
                 {previewMode === 'plain'
                   ? <div className="whitespace-pre-wrap text-sm">{output.plain}</div>
-                  : <div dangerouslySetInnerHTML={{ __html: previewHtml }} />}
+                  : <div dangerouslySetInnerHTML={{ __html: previewOutput.html }} />}
               </div>
-            </div>
+            </div>}
           </div>
           <div className={cardClass}>
             <h3 className="mb-3 font-semibold">Im Mailprogramm einrichten</h3>
@@ -419,9 +434,9 @@ export function MailSignaturesView() {
             <p className="my-3 text-sm text-slate-600">{instructions[client]}</p>
             <div className="flex flex-wrap gap-2">
               {client === 'apple' && <button className={primaryClass}
-                disabled={busy || (!output.plain && !project.image && !httpsUrl(project.imageUrl))}
+                disabled={busy || (!output.plain && !hasGraphics)}
                 onClick={() => void downloadAppleMail()}><Download size={16} /> Für Apple Mail laden (.eml)</button>}
-              {client !== 'mobile' && (client !== 'apple' || !project.image) && <button className={client === 'apple' || client === 'thunderbird' ? buttonClass : primaryClass} disabled={!output.plain && !project.image && !httpsUrl(project.imageUrl)}
+              {client !== 'mobile' && (client !== 'apple' || (!project.image && !project.textArt)) && <button className={client === 'apple' || client === 'thunderbird' ? buttonClass : primaryClass} disabled={!output.plain && !hasGraphics}
                 onClick={() => void copy(true)}><Copy size={16} /> Formatiert kopieren</button>}
               <button className={client === 'mobile' ? primaryClass : buttonClass} disabled={!output.plain} onClick={() => void copy(false)}>Klartext kopieren</button>
               {client !== 'mobile' && <button className={client === 'thunderbird' ? primaryClass : buttonClass} onClick={() => downloadSignature(
@@ -438,13 +453,13 @@ export function MailSignaturesView() {
             {client === 'apple' && !project.image && httpsUrl(project.imageUrl) && (
               <p className="mt-3 text-xs text-slate-600">Lade die Grafik als Datei hoch, damit sie beim Apple-Mail-Export eingebettet wird.</p>
             )}
-            {(project.image || httpsUrl(project.imageUrl)) && client !== 'mobile' && client !== 'apple' && (
+            {hasGraphics && client !== 'mobile' && client !== 'apple' && (
               <p className="mt-3 text-xs text-slate-600">Prüfe die Grafik mit einer Testmail. Je nach Mailprogramm kannst du sie separat im Signatur-Editor einsetzen.</p>
             )}
           </div>
         </div>
       </div>
-      {textArtOpen && <TextArtModal isOpen onClose={() => setTextArtOpen(false)} onInsert={data => void addTextArt(data, project.id)} />}
+      {textArtOpen && <TextArtModal isOpen onClose={() => setTextArtOpen(false)} onInsert={data => void addTextArt(data, project)} />}
     </section>
   );
 }

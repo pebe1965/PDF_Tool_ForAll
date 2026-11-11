@@ -18,22 +18,49 @@ export const fields = {
 
 export const signatureBlocks = {
   greeting: 'Grußformel',
-  identity: 'Name, Kontakt und Grafik',
+  identity: 'Name, Kontakt und Logo',
+  textArt: 'TextArt',
   note: 'Freier Text',
   legal: 'Pflichtangaben / Rechtstext',
 };
 export type SignatureBlock = keyof typeof signatureBlocks;
 const defaultOrder = Object.keys(signatureBlocks) as SignatureBlock[];
 
+export const signatureFonts = {
+  Arial: 'Arial, Helvetica, sans-serif',
+  Calibri: 'Calibri, Arial, sans-serif',
+  'Courier New': "'Courier New', Courier, monospace",
+  Georgia: 'Georgia, serif',
+  Helvetica: 'Helvetica, Arial, sans-serif',
+  Tahoma: 'Tahoma, Arial, sans-serif',
+  'Times New Roman': "'Times New Roman', Times, serif",
+  'Trebuchet MS': "'Trebuchet MS', Arial, sans-serif",
+  Verdana: 'Verdana, Arial, sans-serif',
+};
+
+export type SignatureFont = keyof typeof signatureFonts;
+export type SignatureTextTarget = Exclude<SignatureBlock, 'textArt'> | 'name';
+export type SignatureTextStyle = {
+  font: SignatureFont;
+  size: number;
+  color: string;
+  bold: boolean;
+  italic: boolean;
+};
+export type SignatureTextStyles = Partial<Record<SignatureTextTarget, Partial<SignatureTextStyle>>>;
+export type SignatureArtwork = { image: string; alt: string; width: number };
+
 export type SignatureFields = Record<keyof typeof fields, string>;
 export type SignatureProject = SignatureFields & {
   id: string;
   profile: 'private' | 'business';
   layout: 'stacked' | 'columns';
-  font: 'Arial' | 'Georgia' | 'Verdana';
+  font: SignatureFont;
   color: string;
   image: string;
   imageWidth: number;
+  textArt?: SignatureArtwork;
+  textStyles?: SignatureTextStyles;
   blockOrder: SignatureBlock[];
 };
 
@@ -44,6 +71,7 @@ export type SignatureLibrary = {
 
 const IMAGE_DATA = /^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/]+=*$/;
 const MAX_IMAGE_SIZE = 2_800_000;
+const MAX_PROJECT_SIZE = 6_000_000;
 const DB_NAME = 'PdfToolForAll_MailSignatures';
 
 export function createSignature(profile: SignatureProject['profile']): SignatureProject {
@@ -86,19 +114,75 @@ function signatureImageWidth(width: number) {
   return Math.round(Math.max(32, Math.min(240, width)));
 }
 
+export function signatureBlockOrder(order: readonly SignatureBlock[] = []): SignatureBlock[] {
+  const known = [...new Set(order.filter(key => defaultOrder.includes(key)))];
+  for (const block of defaultOrder) {
+    if (known.includes(block)) continue;
+    const index = block === 'textArt' && known.includes('identity')
+      ? known.indexOf('identity') + 1
+      : known.length;
+    known.splice(index, 0, block);
+  }
+  return known;
+}
+
+function isSignatureFont(font: unknown): font is SignatureFont {
+  return typeof font === 'string' && Object.prototype.hasOwnProperty.call(signatureFonts, font);
+}
+
+function isColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+}
+
+export function signatureTextStyle(project: SignatureProject, target: SignatureTextTarget): SignatureTextStyle {
+  const defaults = {
+    font: isSignatureFont(project.font) ? project.font : 'Arial' as const,
+    size: target === 'name' ? 16 : target === 'legal' ? 12 : 14,
+    color: target === 'name' && isColor(project.color) ? project.color : '#24272c',
+    bold: target === 'name',
+    italic: false,
+  };
+  const style = project.textStyles?.[target];
+  return {
+    font: isSignatureFont(style?.font) ? style.font : defaults.font,
+    size: typeof style?.size === 'number' && Number.isFinite(style.size)
+      ? Math.round(Math.max(9, Math.min(36, style.size))) : defaults.size,
+    color: isColor(style?.color) ? style.color : defaults.color,
+    bold: typeof style?.bold === 'boolean' ? style.bold : defaults.bold,
+    italic: typeof style?.italic === 'boolean' ? style.italic : defaults.italic,
+  };
+}
+
+function textStyleCss(style: SignatureTextStyle) {
+  return `font-family:${signatureFonts[style.font]};font-size:${style.size}px;line-height:1.45;color:${style.color};font-weight:${style.bold ? 'bold' : 'normal'};font-style:${style.italic ? 'italic' : 'normal'};overflow-wrap:anywhere;`;
+}
+
+type SignatureImageSlot = 'logo' | 'textArt';
+type InlineImages = Partial<Record<SignatureImageSlot, { contentId: string; height: number }>>;
+
 type SignatureRenderOptions = {
   hideImage?: boolean;
   preferLocalImage?: boolean;
-  inlineImage?: { contentId: string; height: number };
+  inlineImages?: InlineImages;
 };
 
+function renderImage(source: string, widthValue: number, alt: string, inline?: InlineImages[SignatureImageSlot]) {
+  const src = inline ? `cid:${inline.contentId}` : source;
+  if (!src) return '';
+  const width = signatureImageWidth(widthValue);
+  const height = inline ? ` height="${inline.height}"` : '';
+  // Mail uses the alternative text when naming an inline image copied from a message.
+  const description = alt.trim() || (inline ? 'Signaturgrafik' : '');
+  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(description)}" width="${width}"${height} style="display:block;width:${width}px;max-width:100%;height:auto;border:0;">`;
+}
+
 export function renderSignature(project: SignatureProject, options: SignatureRenderOptions = {}) {
-  const color = /^#[0-9a-f]{6}$/i.test(project.color) ? project.color : '#145a8d';
-  const font = project.font === 'Georgia' ? 'Georgia, serif' : `${project.font}, sans-serif`;
-  const style = `font-family:${font};font-size:14px;line-height:1.45;color:#24272c;overflow-wrap:anywhere;`;
+  const color = project.textStyles?.identity?.color;
+  const linkColor = isColor(color) ? color : isColor(project.color) ? project.color : '#145a8d';
+  const style = (target: SignatureTextTarget) => textStyleCss(signatureTextStyle(project, target));
   const text = (value: string) => escapeHtml(value.trim()).replace(/\r?\n/g, '<br>');
   const link = (value: string, href: string) => href
-    ? `<a href="${escapeHtml(href)}" style="color:${color};text-decoration:underline;">${text(value)}</a>`
+    ? `<a href="${escapeHtml(href)}" style="color:${linkColor};text-decoration:underline;">${text(value)}</a>`
     : text(value);
   const email = project.email.trim();
   const phone = project.phone.trim();
@@ -110,55 +194,58 @@ export function renderSignature(project: SignatureProject, options: SignatureRen
     link(project.social, httpsUrl(project.social)),
   ].filter(Boolean).join('<br>');
   const identity = [
-    project.name.trim() && `<strong style="font-size:16px;color:${color};">${text(project.name)}</strong>`,
+    project.name.trim() && `<span style="${style('name')}">${text(project.name)}</span>`,
     text(project.role),
     text(project.company),
     contact,
   ].filter(Boolean).join('<br>');
   const localImage = imageDataUrl(project.image);
   const remoteImage = httpsUrl(project.imageUrl);
-  const src = options.inlineImage
-    ? `cid:${options.inlineImage.contentId}`
-    : (options.preferLocalImage ? localImage || remoteImage : remoteImage || localImage);
-  const width = signatureImageWidth(project.imageWidth);
-  const height = options.inlineImage ? ` height="${options.inlineImage.height}"` : '';
-  // Mail uses the alternative text when naming an inline image copied from a message.
-  const imageAlt = project.imageAlt.trim() || (options.inlineImage ? 'Signaturgrafik' : '');
-  const image = src && !options.hideImage
-    ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(imageAlt)}" width="${width}"${height} style="display:block;width:${width}px;max-width:100%;height:auto;border:0;">`
+  const logoSrc = options.preferLocalImage ? localImage || remoteImage : remoteImage || localImage;
+  const logo = options.hideImage ? '' : renderImage(logoSrc, project.imageWidth, project.imageAlt, options.inlineImages?.logo);
+  const art = project.textArt;
+  const artwork = !options.hideImage && art
+    ? renderImage(imageDataUrl(art.image), art.width, art.alt, options.inlineImages?.textArt)
     : '';
-  const identityBlock = project.layout === 'columns' && image && identity
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr><td valign="top" style="padding:0 12px 0 0;">${image}</td><td valign="top" style="${style}">${identity}</td></tr></table>`
-    : [identity, image].filter(Boolean).join('<br>');
+  const identityStyle = style('identity');
+  const identityBlock = project.layout === 'columns' && logo && identity
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr><td valign="top" style="padding:0 12px 0 0;">${logo}</td><td valign="top" style="${identityStyle}">${identity}</td></tr></table>`
+    : [identity, logo].filter(Boolean).join('<br>');
   const blocks = {
-    greeting: { html: text(project.greeting), plain: project.greeting, style: 'padding-bottom:6px;' },
+    greeting: { html: text(project.greeting), plain: project.greeting, style: style('greeting') + 'padding-bottom:6px;' },
     identity: {
       html: identityBlock,
       plain: [project.name, project.role, project.company, email, phone, project.website, project.social]
         .map(value => value.trim()).filter(Boolean).join('\n'),
-      style: '',
+      style: identityStyle,
     },
-    note: { html: text(project.note), plain: project.note, style: 'padding-top:8px;' },
-    legal: { html: text(project.legal), plain: project.legal, style: 'padding-top:8px;font-size:12px;' },
+    textArt: { html: artwork, plain: art?.alt ?? '', style: 'padding-top:6px;' },
+    note: { html: text(project.note), plain: project.note, style: style('note') + 'padding-top:8px;' },
+    legal: { html: text(project.legal), plain: project.legal, style: style('legal') + 'padding-top:8px;' },
   };
-  const ordered = (project.blockOrder ?? defaultOrder).map(key => blocks[key]);
+  const ordered = signatureBlockOrder(project.blockOrder).map(key => ({ key, ...blocks[key] }));
   const rows = ordered.filter(block => block.html).map(block => (
-    `<tr><td style="${style}${block.style}">${block.html}</td></tr>`
+    `<tr><td style="${block.style}">${block.html}</td></tr>`
   )).join('');
   return {
+    blocks: ordered,
     html: `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;max-width:100%;">${rows}</table>`,
     plain: ordered.map(block => block.plain.trim()).filter(Boolean).join('\n\n'),
   };
 }
 
-export async function resizeSignatureImage(project: SignatureProject) {
-  const src = imageDataUrl(project.image);
+export function resizeSignatureImage(project: SignatureProject) {
+  return resizeImage(project.image, project.imageWidth);
+}
+
+async function resizeImage(dataUrl: string, imageWidth: number) {
+  const src = imageDataUrl(dataUrl);
   if (!src) throw new Error('Die hochgeladene Grafik konnte nicht gelesen werden.');
 
   const image = new Image();
   image.src = src;
   await image.decode();
-  const width = signatureImageWidth(project.imageWidth);
+  const width = signatureImageWidth(imageWidth);
   const height = Math.max(1, Math.round(image.naturalHeight * width / image.naturalWidth));
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -187,11 +274,28 @@ function mimeBase64(bytes: Uint8Array) {
 }
 
 export async function createAppleMailSignature(project: SignatureProject): Promise<Blob> {
-  const image = project.image ? await resizeSignatureImage(project) : undefined;
-  const contentId = 'logo@pdf-tool-forall.invalid';
-  const { html } = renderSignature(project, {
-    inlineImage: image ? { contentId, height: image.height } : undefined,
-  });
+  const images: { slot: SignatureImageSlot; dataUrl: string; width: number }[] = [];
+  if (project.image) images.push({ slot: 'logo', dataUrl: project.image, width: project.imageWidth });
+  if (project.textArt) images.push({ slot: 'textArt', dataUrl: project.textArt.image, width: project.textArt.width });
+  const boundary = 'pdf-tool-forall-signature';
+  const inlineImages: InlineImages = {};
+  const imageParts = await Promise.all(images.map(async ({ slot, dataUrl, width }) => {
+    const image = await resizeImage(dataUrl, width);
+    const contentId = `${slot.toLowerCase()}@pdf-tool-forall.invalid`;
+    inlineImages[slot] = { contentId, height: image.height };
+    const extension = image.blob.type === 'image/jpeg' ? 'jpg' : 'png';
+    const imageName = `${slot === 'logo' ? 'signatur-grafik' : 'signatur-textart'}.${extension}`;
+    return [
+      `--${boundary}`,
+      `Content-Type: ${image.blob.type}; name="${imageName}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-ID: <${contentId}>`,
+      `Content-Disposition: inline; filename="${imageName}"`,
+      '',
+      mimeBase64(new Uint8Array(await image.blob.arrayBuffer())),
+    ];
+  }));
+  const { html } = renderSignature(project, { inlineImages });
   const htmlDocument = `<!doctype html><html lang="de"><head><meta charset="utf-8"></head><body>${html}</body></html>`;
   const htmlPart = [
     'Content-Type: text/html; charset=utf-8',
@@ -200,20 +304,12 @@ export async function createAppleMailSignature(project: SignatureProject): Promi
     mimeBase64(new TextEncoder().encode(htmlDocument)),
   ];
   const headers = ['MIME-Version: 1.0', 'Subject: E-Mail-Signatur'];
-  const boundary = 'pdf-tool-forall-signature';
-  const imageName = image?.blob.type === 'image/jpeg' ? 'signatur-grafik.jpg' : 'signatur-grafik.png';
-  const parts = image ? [
+  const parts = imageParts.length ? [
     `Content-Type: multipart/related; boundary="${boundary}"; type="text/html"`,
     '',
     `--${boundary}`,
     ...htmlPart,
-    `--${boundary}`,
-    `Content-Type: ${image.blob.type}; name="${imageName}"`,
-    'Content-Transfer-Encoding: base64',
-    `Content-ID: <${contentId}>`,
-    `Content-Disposition: inline; filename="${imageName}"`,
-    '',
-    mimeBase64(new Uint8Array(await image.blob.arrayBuffer())),
+    ...imageParts.flat(),
     `--${boundary}--`,
   ] : htmlPart;
   return new Blob([[...headers, ...parts, ''].join('\r\n')], { type: 'message/rfc822' });
@@ -242,7 +338,7 @@ export function exportSignatureProject(project: SignatureProject) {
 }
 
 export async function importSignature(file: File): Promise<SignatureProject> {
-  if (file.size > 5_000_000) throw new Error('Die Datei ist größer als 5 MB.');
+  if (file.size > MAX_PROJECT_SIZE) throw new Error('Die Datei ist größer als 6 MB.');
   const content = await file.text();
   if (/\.json$/i.test(file.name)) {
     const payload = JSON.parse(content.replace(/^\uFEFF/, ''));
@@ -255,14 +351,31 @@ export async function importSignature(file: File): Promise<SignatureProject> {
       if (typeof source[key] === 'string') project[key] = source[key].slice(0, 12_000);
     }
     project.layout = source.layout === 'columns' ? 'columns' : 'stacked';
-    if (['Arial', 'Georgia', 'Verdana'].includes(source.font)) project.font = source.font;
-    if (typeof source.color === 'string' && /^#[0-9a-f]{6}$/i.test(source.color)) project.color = source.color;
+    if (isSignatureFont(source.font)) project.font = source.font;
+    if (isColor(source.color)) project.color = source.color;
     if (typeof source.image === 'string') project.image = imageDataUrl(source.image);
     if (Number.isFinite(source.imageWidth)) project.imageWidth = signatureImageWidth(source.imageWidth);
-    if (Array.isArray(source.blockOrder) && source.blockOrder.length === defaultOrder.length &&
-        defaultOrder.every(key => source.blockOrder.includes(key))) {
-      project.blockOrder = source.blockOrder;
+    if (Array.isArray(source.blockOrder)) project.blockOrder = signatureBlockOrder(source.blockOrder);
+    const artImage = typeof source.textArt?.image === 'string' ? imageDataUrl(source.textArt.image) : '';
+    if (artImage) {
+      project.textArt = {
+        image: artImage,
+        alt: typeof source.textArt.alt === 'string' ? source.textArt.alt.slice(0, 500) : '',
+        width: Number.isFinite(source.textArt.width) ? signatureImageWidth(source.textArt.width) : 160,
+      };
     }
+    const styles: SignatureTextStyles = {};
+    for (const target of ['greeting', 'identity', 'name', 'note', 'legal'] as const) {
+      const style = source.textStyles?.[target];
+      if (!style || typeof style !== 'object') continue;
+      styles[target] = {};
+      if (isSignatureFont(style.font)) styles[target].font = style.font;
+      if (Number.isFinite(style.size)) styles[target].size = Math.round(Math.max(9, Math.min(36, style.size)));
+      if (isColor(style.color)) styles[target].color = style.color;
+      if (typeof style.bold === 'boolean') styles[target].bold = style.bold;
+      if (typeof style.italic === 'boolean') styles[target].italic = style.italic;
+    }
+    project.textStyles = styles;
     return project;
   }
   if (!/\.(html?|txt)$/i.test(file.name)) throw new Error('Wähle eine Signaturprojekt-, HTML- oder Textdatei.');
