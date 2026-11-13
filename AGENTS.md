@@ -150,8 +150,12 @@ aus, und für ein Release ist keiner nötig.
   `src/lib/imageEngine.ts` (Effekte), `src/lib/pdfRedact.ts` (Schwärzung
   einbrennen) und `src/lib/pdfTextSearch.ts` (Text suchen). Änderungen dort
   wirken auf beide Versionen – beide testen.
-- Bewusst nur „unkenntlich machen“ (Bilder und PDFs). Alles bleibt auf dem
-  Gerät; es gibt keinen Server und keine KI-Aufrufe in der Smartphone-Version.
+- Funktionen: unkenntlich machen (Bilder und PDFs, Text suchen), scannen
+  (`MobileScan`, `scanEngine.ts`), unterschreiben (`MobileSign`), Seiten
+  ordnen/zusammenführen/aufteilen (`MobilePages`) und verkleinern
+  (`MobileCompress`, nutzt `compressPdfBuffer` aus `src/lib/pdfEngine.ts`).
+  Alles bleibt auf dem Gerät; es gibt keinen Server und keine KI-Aufrufe in
+  der Smartphone-Version.
 - Die eigene Adresse ist in den GitHub-Pages-Einstellungen des Repos
   hinterlegt (nicht als Datei `CNAME` – bei Veröffentlichung über GitHub
   Actions wird sie ignoriert).

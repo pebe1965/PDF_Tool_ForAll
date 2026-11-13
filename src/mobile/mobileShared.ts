@@ -20,7 +20,15 @@ export function useHistory<T>(initial: T, limit = 50) {
     () => setState((s) => (s.future.length === 0 ? s : { past: [...s.past, s.present], present: s.future[0], future: s.future.slice(1) })),
     [],
   );
-  const reset = useCallback((value: T) => setState({ past: [], present: value, future: [] }), []);
+  // Zuletzt gesicherter Stand – danach fragt Schließen nicht mehr nach
+  const [saved, setSaved] = useState<T>(initial);
+  const presentRef = useRef(state.present);
+  presentRef.current = state.present;
+  const markSaved = useCallback(() => setSaved(() => presentRef.current), []);
+  const reset = useCallback((value: T) => {
+    setState({ past: [], present: value, future: [] });
+    setSaved(() => value);
+  }, []);
 
   // Schieberegler: alle Änderungen kurz hintereinander am selben Ziel ergeben einen Rückgängig-Schritt
   const lastKey = useRef<{ key: string; at: number } | null>(null);
@@ -40,7 +48,8 @@ export function useHistory<T>(initial: T, limit = 50) {
     reset,
     canUndo: state.past.length > 0,
     canRedo: state.future.length > 0,
-    dirty: state.past.length > 0,
+    dirty: !Object.is(state.present, saved),
+    markSaved,
   };
 }
 

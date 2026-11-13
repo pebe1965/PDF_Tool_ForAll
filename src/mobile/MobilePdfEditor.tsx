@@ -326,7 +326,10 @@ export default function MobilePdfEditor({ file, onClose }: { file: File; onClose
 
       {sheet === 'search' && <SearchSheet doc={doc} onClose={() => setSheet(null)} onApply={(m) => { setSheet(null); addMatches(m); }} />}
       {sheet === 'export' && bytes && (
-        <PdfExportSheet bytes={bytes} fileName={file.name} redactions={redactions} onClose={() => setSheet(null)} onDone={showToast} />
+        <PdfExportSheet bytes={bytes} fileName={file.name} redactions={redactions} onClose={() => setSheet(null)} onDone={(t: string) => {
+            history.markSaved();
+            showToast(t);
+          }} />
       )}
       <Toast text={toast} />
     </div>

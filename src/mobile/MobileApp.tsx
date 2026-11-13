@@ -1,18 +1,27 @@
-import { lazy, Suspense, useRef, useState, type ReactNode } from 'react';
-import { Camera, FileText, ImageUp, Info, Lock, LoaderCircle, Search, Share, Smartphone, WifiOff } from 'lucide-react';
+import { lazy, Suspense, useCallback, useRef, useState, type ReactNode } from 'react';
+import { Camera, EyeOff, FileStack, FileText, ImageUp, Info, Lock, LoaderCircle, Minimize2, PenLine, ScanLine, Search, Share, Smartphone, WifiOff } from 'lucide-react';
 import { APP_VERSION } from '../config';
 
 const MobileImageEditor = lazy(() => import('./MobileImageEditor'));
 const MobilePdfEditor = lazy(() => import('./MobilePdfEditor'));
+const MobileSign = lazy(() => import('./MobileSign'));
+const MobilePages = lazy(() => import('./MobilePages'));
+const MobileCompress = lazy(() => import('./MobileCompress'));
+const MobileScan = lazy(() => import('./MobileScan'));
 
-type Tab = 'image' | 'pdf' | 'info';
+type Tab = 'image' | 'pdf' | 'scan' | 'info';
+type PdfToolKind = 'redact' | 'sign' | 'pages' | 'compress';
 
 export default function MobileApp() {
   const [tab, setTab] = useState<Tab>('image');
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfTool, setPdfTool] = useState<{ kind: PdfToolKind; files: File[] } | null>(null);
+  const [scanEditing, setScanEditing] = useState(false);
+  const [scanOpened, setScanOpened] = useState(false);
+  const onScanEditing = useCallback((on: boolean) => setScanEditing(on), []);
 
-  const editing = (tab === 'image' && imageFile) || (tab === 'pdf' && pdfFile);
+  const editing = (tab === 'image' && imageFile) || (tab === 'pdf' && pdfTool) || (tab === 'scan' && scanEditing);
+  const closePdf = () => setPdfTool(null);
 
   const loading = (
     <div className="flex h-full items-center justify-center">
@@ -32,13 +41,30 @@ export default function MobileApp() {
             <ImageStart onFile={setImageFile} />
           ))}
         {tab === 'pdf' &&
-          (pdfFile ? (
+          (pdfTool ? (
             <Suspense fallback={loading}>
-              <MobilePdfEditor file={pdfFile} onClose={() => setPdfFile(null)} />
+              {pdfTool.kind === 'redact' && <MobilePdfEditor file={pdfTool.files[0]} onClose={closePdf} />}
+              {pdfTool.kind === 'sign' && <MobileSign file={pdfTool.files[0]} onClose={closePdf} />}
+              {pdfTool.kind === 'pages' && <MobilePages files={pdfTool.files} onClose={closePdf} />}
+              {pdfTool.kind === 'compress' && <MobileCompress file={pdfTool.files[0]} onClose={closePdf} />}
             </Suspense>
           ) : (
-            <PdfStart onFile={setPdfFile} />
+            <PdfStart onOpen={(kind, files) => setPdfTool({ kind, files })} />
           ))}
+        {/* Scannen bleibt geladen, damit ein Scan beim Wechsel zum Schwärzen nicht verloren geht */}
+        {(tab === 'scan' || scanOpened) && (
+          <div className={tab === 'scan' ? 'h-full' : 'hidden'}>
+            <Suspense fallback={loading}>
+              <MobileScan
+                onEditing={onScanEditing}
+                onRedact={(file) => {
+                  setPdfTool({ kind: 'redact', files: [file] });
+                  setTab('pdf');
+                }}
+              />
+            </Suspense>
+          </div>
+        )}
         {tab === 'info' && <InfoPage />}
       </main>
 
@@ -47,6 +73,15 @@ export default function MobileApp() {
           <div className="flex px-2 pt-1.5">
             <TabButton active={tab === 'image'} onClick={() => setTab('image')} icon={<ImageUp className="h-6 w-6" />} label="Bild" />
             <TabButton active={tab === 'pdf'} onClick={() => setTab('pdf')} icon={<FileText className="h-6 w-6" />} label="PDF" />
+            <TabButton
+              active={tab === 'scan'}
+              onClick={() => {
+                setScanOpened(true);
+                setTab('scan');
+              }}
+              icon={<ScanLine className="h-6 w-6" />}
+              label="Scannen"
+            />
             <TabButton active={tab === 'info'} onClick={() => setTab('info')} icon={<Info className="h-6 w-6" />} label="Info" />
           </div>
         </nav>
@@ -136,30 +171,60 @@ function ImageStart({ onFile }: { onFile: (f: File) => void }) {
   );
 }
 
-function PdfStart({ onFile }: { onFile: (f: File) => void }) {
+const PDF_TOOLS: { kind: PdfToolKind; icon: ReactNode; title: string; text: string; multiple?: boolean; images?: boolean }[] = [
+  { kind: 'redact', icon: <EyeOff className="h-6 w-6" />, title: 'Unkenntlich machen', text: 'Namen, IBAN oder Adressen schwärzen – mit Suche' },
+  { kind: 'sign', icon: <PenLine className="h-6 w-6" />, title: 'Unterschreiben', text: 'Mit dem Finger unterschreiben, Datum und Text einfügen' },
+  {
+    kind: 'pages',
+    icon: <FileStack className="h-6 w-6" />,
+    title: 'Seiten & Zusammenführen',
+    text: 'PDFs und Fotos verbinden, Seiten ordnen, drehen, löschen oder einzeln speichern',
+    multiple: true,
+    images: true,
+  },
+  { kind: 'compress', icon: <Minimize2 className="h-6 w-6" />, title: 'Verkleinern', text: 'Für E-Mail-Anhänge und Upload-Formulare' },
+];
+
+function PdfStart({ onOpen }: { onOpen: (kind: PdfToolKind, files: File[]) => void }) {
   const pickRef = useRef<HTMLInputElement>(null);
+  const pending = useRef<(typeof PDF_TOOLS)[number] | null>(null);
   return (
     <StartLayout
-      title="PDF unkenntlich machen"
-      subtitle="Namen, IBAN, Adressen oder ganze Textpassagen schwärzen, verpixeln oder weichzeichnen – bevor du ein Dokument weitergibst."
+      title="PDF-Werkzeuge"
+      subtitle="Unkenntlich machen, unterschreiben, zusammenführen und verkleinern – direkt auf dem Handy."
       notes={
         <>
           {PRIVACY_NOTE}
-          <Note icon={<Search className="h-4 w-4" />}>„Suchen“ findet Begriffe, IBANs, E-Mail-Adressen und Telefonnummern automatisch.</Note>
-          <Note icon={<FileText className="h-4 w-4" />}>Der Text unter einer Schwärzung wird beim Sichern wirklich entfernt, nicht nur überdeckt.</Note>
+          <Note icon={<Search className="h-4 w-4" />}>„Unkenntlich machen“ findet Begriffe, IBANs, E-Mail-Adressen und Telefonnummern automatisch.</Note>
+          <Note icon={<FileText className="h-4 w-4" />}>Gespeichert wird immer eine Kopie – deine Originaldatei bleibt unverändert.</Note>
         </>
       }
     >
-      <BigButton primary icon={<FileText className="h-6 w-6" />} title="PDF öffnen" text="Aus Dateien, iCloud, Downloads …" onClick={() => pickRef.current?.click()} />
+      {PDF_TOOLS.map((t, i) => (
+        <BigButton
+          key={t.kind}
+          primary={i === 0}
+          icon={t.icon}
+          title={t.title}
+          text={t.text}
+          onClick={() => {
+            const input = pickRef.current;
+            if (!input) return;
+            input.multiple = !!t.multiple;
+            input.accept = t.images ? 'application/pdf,.pdf,image/*' : 'application/pdf,.pdf';
+            pending.current = t;
+            input.click();
+          }}
+        />
+      ))}
       <input
         ref={pickRef}
         type="file"
-        accept="application/pdf,.pdf"
         className="hidden"
         onChange={(e) => {
-          const f = e.target.files?.[0];
+          const files = Array.from(e.target.files || []);
           e.target.value = '';
-          if (f) onFile(f);
+          if (files.length && pending.current) onOpen(pending.current.kind, files);
         }}
       />
     </StartLayout>
@@ -215,7 +280,7 @@ function InfoPage() {
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <h2 className="mb-1.5 text-[15px] font-semibold">Mehr Funktionen am Computer</h2>
           <p className="text-[14px] leading-snug text-[#3A3A3C]">
-            Die Toolbox für Mac und Windows kann zusätzlich PDFs bearbeiten und unterschreiben, zusammenführen, komprimieren, E-Rechnungen auslesen und
+            Die Toolbox für Mac und Windows kann zusätzlich PDFs frei bearbeiten, Formulare ausfüllen, E-Rechnungen auslesen, Dokumente vergleichen und
             E-Mail-Signaturen gestalten.
           </p>
           {location.pathname.includes('/mobil/') && (

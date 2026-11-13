@@ -24,9 +24,18 @@ textarea {
 .safe-bottom {
   padding-bottom: max(env(safe-area-inset-bottom), 8px);
 }
-.safe-x {
+/* :where = keine Gewichtung – eigene px-…-Abstände der Elemente haben Vorrang */
+:where(.safe-x) {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+}
+
+/* Waagerecht scrollende Leisten ohne sichtbaren Balken */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 /* Größerer Daumen für Schieberegler */

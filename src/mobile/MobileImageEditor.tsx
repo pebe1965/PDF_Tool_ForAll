@@ -180,7 +180,10 @@ export default function MobileImageEditor({ file, onClose }: { file: File; onClo
         />
       </div>
 
-      {exportOpen && <ImageExportSheet img={img} regions={regions} onClose={() => setExportOpen(false)} onDone={showToast} />}
+      {exportOpen && <ImageExportSheet img={img} regions={regions} onClose={() => setExportOpen(false)} onDone={(t: string) => {
+            history.markSaved();
+            showToast(t);
+          }} />}
       <Toast text={toast} />
     </div>
   );
