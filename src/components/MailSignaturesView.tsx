@@ -573,78 +573,29 @@ export function MailSignaturesView() {
       );
     }
     if (activeSelection === 'divider') {
-      const isVertical = item.layout === 'columns' && item.dividerStyle && item.dividerStyle !== 'none';
       return (
         <div className="space-y-3">
-          <div className="space-y-1">
-            <span className="text-[11px] font-semibold text-gray-500">Ausrichtung der Linie</span>
-            <div className="flex rounded-xl bg-[#F5F5F7] p-0.5" role="group" aria-label="Ausrichtung der Trennlinie">
-              <button
-                type="button"
-                className={segmentClass}
-                aria-pressed={!isVertical}
-                onClick={() => {
-                  update({ showDivider: true });
-                }}
-              >
-                Waagerecht
-              </button>
-              <button
-                type="button"
-                className={segmentClass}
-                aria-pressed={isVertical}
-                onClick={() => {
-                  update({
-                    layout: 'columns',
-                    dividerStyle: item.dividerStyle && item.dividerStyle !== 'none' ? item.dividerStyle : 'accent',
-                    valign: item.valign ?? 'middle',
-                  });
-                }}
-              >
-                Senkrecht (am Logo)
-              </button>
-            </div>
+          <label className="block space-y-1">
+            <span className="text-[11px] font-semibold text-gray-500">Linienfarbe</span>
+            <select className={inputClass} value={item.horizontalDividerColor ?? 'gray'}
+              onChange={event => update({ horizontalDividerColor: event.currentTarget.value as 'accent' | 'gray' })}>
+              <option value="gray">Dezentes Grau</option>
+              <option value="accent">Akzentfarbe ({item.color})</option>
+            </select>
+          </label>
+          <label className="block space-y-1">
+            <span className="text-[11px] font-semibold text-gray-500">Linienstärke</span>
+            <select className={inputClass} value={item.horizontalDividerWidth ?? 1}
+              onChange={event => update({ horizontalDividerWidth: Number(event.currentTarget.value) })}>
+              <option value="1">1 px (fein)</option>
+              <option value="2">2 px (markant)</option>
+              <option value="3">3 px (kräftig)</option>
+            </select>
+          </label>
+          <div className="rounded-xl border border-gray-200/70 bg-[#F5F5F7] p-2.5 text-[11px] leading-relaxed text-gray-600">
+            💡 <strong>Hinweis:</strong> Dies ist die waagerechte Trennlinie, die du per Drag & Drop frei verschieben kannst. Den <em>senkrechten</em> Strich neben dem Logo stellst du ein, indem du auf das Logo klickst.
           </div>
-
-          {isVertical ? (
-            <div className="space-y-2.5 rounded-xl border border-blue-200/70 bg-blue-50/40 p-2.5">
-              <span className="text-[11px] font-bold text-blue-900">Senkrechter Strich neben dem Logo</span>
-              {!hasLogo && (
-                <div className="space-y-1.5">
-                  <p className="text-[11px] text-gray-600">Lade noch ein Logo oder Foto hoch, damit der Strich daneben steht:</p>
-                  <button type="button" className={`${secondaryClass} w-full`} onClick={() => imageInput.current?.click()}>
-                    <ImagePlus size={14} /> Logo / Foto hinzufügen
-                  </button>
-                </div>
-              )}
-              {columnDividerControls(item)}
-            </div>
-          ) : (
-            <>
-              <label className="block space-y-1">
-                <span className="text-[11px] font-semibold text-gray-500">Linienfarbe</span>
-                <select className={inputClass} value={item.horizontalDividerColor ?? 'gray'}
-                  onChange={event => update({ horizontalDividerColor: event.currentTarget.value as 'accent' | 'gray' })}>
-                  <option value="gray">Dezentes Grau</option>
-                  <option value="accent">Akzentfarbe</option>
-                </select>
-              </label>
-              <label className="block space-y-1">
-                <span className="text-[11px] font-semibold text-gray-500">Linienstärke</span>
-                <select className={inputClass} value={item.horizontalDividerWidth ?? 1}
-                  onChange={event => update({ horizontalDividerWidth: Number(event.currentTarget.value) })}>
-                  <option value="1">1 px (fein)</option>
-                  <option value="2">2 px (markant)</option>
-                  <option value="3">3 px (kräftig)</option>
-                </select>
-              </label>
-            </>
-          )}
-
-          <button type="button" className={`${secondaryClass} w-full text-red-600 hover:bg-red-50`} onClick={() => {
-            clear('divider');
-            if (isVertical) update({ dividerStyle: 'none' });
-          }}>
+          <button type="button" className={`${secondaryClass} w-full text-red-600 hover:bg-red-50`} onClick={() => clear('divider')}>
             <Trash2 size={14} /> Trennlinie entfernen
           </button>
         </div>
