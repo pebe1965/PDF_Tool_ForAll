@@ -51,6 +51,7 @@ Sie kann **Bilder und PDFs unkenntlich machen** (Farbbalken, Verpixeln, Weichzei
   - 1-Klick-Prüfsymbole (**Häkchen ✓**, **Kreuzchen ✗**, Rahmen, Kreis, Pfeil) sowie **Freihand-Stift**.
 - **Echte DSGVO-Schwärzung (Redaction)**:
   - Sensible Daten (IBAN, Namen, Gehälter) mit Schwärzungsbalken abdecken — beim PDF-Export wird die betroffene Seite hochauflösend gerastert, sodass darunterliegender Text **unwiderruflich aus dem PDF-Code entfernt** ist.
+  - **Suchen & schwärzen**: Namen, Begriffe, IBANs, E-Mail-Adressen, Telefonnummern oder Daten im ganzen PDF finden und alle Fundstellen auf einmal schwärzen.
 - **Ausfüllbare PDF-Formulare (AcroForms)**:
   - Erkennt interaktive Formularfelder (Textfelder, Checkboxen, Dropdowns) automatisch, lässt sie direkt ausfüllen und auf Wunsch **schreibgeschützt einbrennen (Flatten)**.
 - **Seitenzahlen, Bates-Nummerierung, Kopf-/Fußzeile & Wasserzeichen**:

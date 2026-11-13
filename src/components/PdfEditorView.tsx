@@ -60,6 +60,8 @@ import { PageBackgroundModal } from './PageBackgroundModal';
 import { TextArtModal } from './TextArtModal';
 import { SaveDocumentModal } from './SaveDocumentModal';
 import { GeminiAiModal } from './GeminiAiModal';
+import { TextSearchRedactModal } from './TextSearchRedactModal';
+import type { TextMatch } from '../lib/pdfTextSearch';
 import { formatMarkdownToCleanText, extractTextFromPdf } from '../lib/geminiService';
 import { paginateDocumentForA4 } from '../lib/a4Pagination';
 import {
@@ -156,6 +158,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   const [isBackgroundModalOpen, setIsBackgroundModalOpen] = useState(false);
   const [pageBackgrounds, setPageBackgrounds] = useState<Record<number, string>>({});
   const [isTextArtModalOpen, setIsTextArtModalOpen] = useState(false);
+  const [isRedactSearchOpen, setIsRedactSearchOpen] = useState(false);
   const [editingTextArt, setEditingTextArt] = useState<TextArtAnnotation | null>(null);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isDocSwitcherOpen, setIsDocSwitcherOpen] = useState(false);
@@ -791,6 +794,42 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       setSelectedAnnId(newRed.id);
       setActiveTool('select');
     }
+  };
+
+  // „Text suchen und schwärzen“: Fundstellen als Schwärzungen anlegen
+  const handleApplyTextMatches = (matches: TextMatch[]): number => {
+    const key = (p: number, x: number, y: number) => `${p}:${x.toFixed(4)}:${y.toFixed(4)}`;
+    const existing = new Set(
+      annotations.filter((a): a is RedactionAnnotation => a.type === 'redaction').map((a) => key(a.pageNumber, a.x, a.y))
+    );
+    const method = getLastPdfRedactionMethod();
+    const stamp = Date.now();
+    const added: RedactionAnnotation[] = [];
+    for (const m of matches) {
+      for (const b of m.boxes) {
+        const k = key(m.pageNumber, b.x, b.y);
+        if (existing.has(k)) continue;
+        existing.add(k);
+        added.push({
+          id: `red_${stamp}_${added.length}`,
+          type: 'redaction',
+          pageNumber: m.pageNumber,
+          x: b.x,
+          y: b.y,
+          width: b.width,
+          height: b.height,
+          label: 'DSGVO',
+          method,
+          strength: PDF_REDACTION_DEFAULT_STRENGTH,
+        });
+      }
+    }
+    if (added.length === 0) return 0;
+    pushAnnotationsChange((prev) => [...prev, ...added]);
+    setSelectedAnnId(null);
+    setActiveTool('select');
+    setCurrentPage(Math.min(...added.map((a) => a.pageNumber)));
+    return added.length;
   };
 
   // Freehand drawing pointer handlers on page container
@@ -2016,6 +2055,17 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                 <span>Schwärzen</span>
               </button>
 
+              {/* Text suchen und schwärzen */}
+              <button
+                onClick={() => setIsRedactSearchOpen(true)}
+                disabled={!pdfDoc}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#F5F5F7] text-[#1D1D1F] hover:bg-red-50 hover:text-red-700 rounded-xl text-xs font-semibold transition disabled:opacity-40"
+                title="Text suchen und schwärzen: Namen, IBANs, E-Mail-Adressen, Telefonnummern oder Daten im ganzen PDF finden und auf einmal schwärzen"
+              >
+                <Search size={14} />
+                <span>Suchen & schwärzen</span>
+              </button>
+
               {/* Signature */}
               <button
                 onClick={() => setIsSignatureModalOpen(true)}
@@ -2607,6 +2657,14 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         currentColor={pageBackgrounds[currentPage] || '#FFFFFF'}
         onApplyBackground={handleApplyBackground}
         onResetBackground={handleResetBackground}
+      />
+
+      {/* Text suchen und schwärzen */}
+      <TextSearchRedactModal
+        isOpen={isRedactSearchOpen}
+        pdfDoc={pdfDoc}
+        onClose={() => setIsRedactSearchOpen(false)}
+        onApply={handleApplyTextMatches}
       />
 
       {/* TextArt & WordArt Studio Modal */}
