@@ -112,7 +112,7 @@ export default function MobileCompress({ file, onClose }: { file: File; onClose:
               <p className="flex gap-2 text-xs leading-snug text-[#6E6E73]">
                 <CircleAlert className="mt-px h-4 w-4 shrink-0 text-[#FF9500]" />
                 Beim Verkleinern werden die Seiten als Bild neu aufgebaut. Text lässt sich danach nicht mehr markieren oder durchsuchen, Formularfelder und Links
-                fallen weg.
+                fallen weg. Dein Original bleibt unverändert – gespeichert wird eine Kopie mit „_klein“ im Namen.
               </p>
 
               {!result && (
@@ -150,7 +150,13 @@ export default function MobileCompress({ file, onClose }: { file: File; onClose:
         </div>
       </div>
       {sharing && result && (
-        <ShareSheet title="Verkleinertes PDF" build={async () => [result.file]} onClose={() => setSharing(false)} onDone={setToastTimed(setToast)} />
+        <ShareSheet
+          title="Verkleinertes PDF"
+          build={async () => [result.file]}
+          onClose={() => setSharing(false)}
+          onDone={setToastTimed(setToast)}
+          info={<p className="text-xs leading-snug text-[#6E6E73]">Gespeichert wird eine Kopie: {result.file.name}. Das Original bleibt unverändert.</p>}
+        />
       )}
       <Toast text={toast} />
     </div>
