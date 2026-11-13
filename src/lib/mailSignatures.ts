@@ -157,23 +157,28 @@ function textStyleCss(style: SignatureTextStyle) {
   return `font-family:${signatureFonts[style.font]};font-size:${style.size}px;line-height:1.45;color:${style.color};font-weight:${style.bold ? 'bold' : 'normal'};font-style:${style.italic ? 'italic' : 'normal'};overflow-wrap:anywhere;`;
 }
 
-type SignatureImageSlot = 'logo' | 'textArt';
+export type SignatureImageSlot = 'logo' | 'textArt';
 type InlineImages = Partial<Record<SignatureImageSlot, { contentId: string; height: number }>>;
 
 type SignatureRenderOptions = {
   hideImage?: boolean;
   preferLocalImage?: boolean;
   inlineImages?: InlineImages;
+  /** Marks images with their slot so the design view can attach resize handles. Never used for export. */
+  markImages?: boolean;
 };
 
-function renderImage(source: string, widthValue: number, alt: string, inline?: InlineImages[SignatureImageSlot]) {
+function renderImage(
+  source: string, widthValue: number, alt: string, inline?: InlineImages[SignatureImageSlot], slot?: SignatureImageSlot,
+) {
   const src = inline ? `cid:${inline.contentId}` : source;
   if (!src) return '';
   const width = signatureImageWidth(widthValue);
   const height = inline ? ` height="${inline.height}"` : '';
+  const marker = slot ? ` data-signature-image="${slot}" draggable="false"` : '';
   // Mail uses the alternative text when naming an inline image copied from a message.
   const description = alt.trim() || (inline ? 'Signaturgrafik' : '');
-  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(description)}" width="${width}"${height} style="display:block;width:${width}px;max-width:100%;height:auto;border:0;">`;
+  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(description)}" width="${width}"${height}${marker} style="display:block;width:${width}px;max-width:100%;height:auto;border:0;">`;
 }
 
 export function renderSignature(project: SignatureProject, options: SignatureRenderOptions = {}) {
@@ -202,10 +207,12 @@ export function renderSignature(project: SignatureProject, options: SignatureRen
   const localImage = imageDataUrl(project.image);
   const remoteImage = httpsUrl(project.imageUrl);
   const logoSrc = options.preferLocalImage ? localImage || remoteImage : remoteImage || localImage;
-  const logo = options.hideImage ? '' : renderImage(logoSrc, project.imageWidth, project.imageAlt, options.inlineImages?.logo);
+  const logo = options.hideImage ? '' : renderImage(
+    logoSrc, project.imageWidth, project.imageAlt, options.inlineImages?.logo, options.markImages ? 'logo' : undefined,
+  );
   const art = project.textArt;
   const artwork = !options.hideImage && art
-    ? renderImage(imageDataUrl(art.image), art.width, art.alt, options.inlineImages?.textArt)
+    ? renderImage(imageDataUrl(art.image), art.width, art.alt, options.inlineImages?.textArt, options.markImages ? 'textArt' : undefined)
     : '';
   const identityStyle = style('identity');
   const identityBlock = project.layout === 'columns' && logo && identity
