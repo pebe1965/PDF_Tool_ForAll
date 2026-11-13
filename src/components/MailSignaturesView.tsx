@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import {
-  AlignLeft, Check, ChevronDown, Columns2, Copy, CopyPlus, Download, FolderOpen, ImagePlus, Mail, Monitor,
+  AlignLeft, Check, ChevronDown, Columns2, Copy, CopyPlus, Download, FolderOpen, ImagePlus, Mail, Minus, Monitor,
   MessageSquareQuote, MousePointerClick, Palette, Plus, Redo2, Rows2, Scale, Send, Smartphone, Sparkles, Trash2,
   Undo2, UserRound, ZoomIn, ZoomOut,
 } from 'lucide-react';
@@ -16,8 +16,8 @@ import {
   saveSignatureLibrary, signatureBlockOrder, signatureBlocks, signatureFileName, signatureFonts,
 } from '../lib/mailSignatures';
 import type {
-  SignatureBlock, SignatureFields, SignatureImageSlot, SignatureLibrary, SignatureProject, SignatureTextStyle,
-  SignatureTextTarget,
+  ContactLabelStyle, DividerStyle, ImageShape, SignatureBlock, SignatureFields, SignatureImageSlot,
+  SignatureLibrary, SignatureProject, SignatureTextStyle, SignatureTextTarget, SpacingStyle, VerticalAlign,
 } from '../lib/mailSignatures';
 import type { TextArtAnnotation } from '../types/pdf';
 
@@ -88,6 +88,7 @@ const paletteItems: { item: PaletteItem; label: string; icon: typeof Mail; busin
   { item: 'greeting', label: 'Grußformel', icon: MessageSquareQuote },
   { item: 'identity', label: 'Name & Kontakt', icon: UserRound },
   { item: 'logo', label: 'Logo / Foto', icon: ImagePlus },
+  { item: 'divider', label: 'Trennlinie', icon: Minus },
   { item: 'textArt', label: 'TextArt', icon: Sparkles },
   { item: 'note', label: 'Freier Text', icon: AlignLeft },
   { item: 'legal', label: 'Pflichtangaben', icon: Scale, businessOnly: true },
@@ -170,7 +171,7 @@ export function MailSignaturesView() {
   const canInsertTemplate = !legalText || legalText === smallBusinessNote;
   const legalWithNote = [project.legal.trimEnd(), smallBusinessNote].filter(Boolean).join('\n\n');
   const canvasBlocks = designOutput.blocks.filter(({ key, html }) =>
-    key === 'identity' || (Boolean(html) && (key !== 'legal' || project.profile === 'business')),
+    key === 'identity' || (Boolean(html) && (key !== 'legal' || project.profile === 'business') && (key !== 'divider' || project.showDivider)),
   );
   const hasGraphics = Boolean(project.image || project.textArt || httpsUrl(project.imageUrl));
   const hasLogo = Boolean(project.image || httpsUrl(project.imageUrl));
@@ -248,6 +249,12 @@ export function MailSignaturesView() {
       setTextArtOpen(true);
       return;
     }
+    if (item === 'divider') {
+      update({ showDivider: true, blockOrder: placedOrder('divider', before) });
+      setSelection('divider');
+      setStatus('Trennlinie eingefügt.');
+      return;
+    }
     const changes: Partial<SignatureProject> = { blockOrder: placedOrder(item, before) };
     if (item === 'greeting' && !project!.greeting.trim()) {
       changes.greeting = project!.profile === 'business' ? 'Mit freundlichen Grüßen' : 'Viele Grüße';
@@ -260,7 +267,7 @@ export function MailSignaturesView() {
   }
 
   function paletteClick(item: PaletteItem) {
-    if (item === 'logo' ? hasLogo : canvasBlocks.some(block => block.key === item)) {
+    if (item === 'logo' ? hasLogo : item === 'divider' ? project!.showDivider : canvasBlocks.some(block => block.key === item)) {
       setMode('edit');
       setRightTab('design');
       setSelection(item);
@@ -273,6 +280,7 @@ export function MailSignaturesView() {
     if (target === 'identity') return;
     if (target === 'logo') update({ image: '', imageUrl: '' });
     else if (target === 'textArt') update({ textArt: undefined });
+    else if (target === 'divider') update({ showDivider: false });
     else update({ [target]: '' });
     setSelection(undefined);
     setStatus(`${target === 'logo' ? 'Grafik' : signatureBlocks[target]} entfernt – mit ⌘Z / Strg+Z rückgängig.`);
@@ -466,6 +474,41 @@ export function MailSignaturesView() {
     );
   }
 
+  function columnDividerControls(item: SignatureProject) {
+    return (
+      <div className="space-y-2 pt-1">
+        <label className="block space-y-1">
+          <span className="text-[11px] font-medium text-gray-600">Vertikaler Trennstrich</span>
+          <select className={inputClass} value={item.dividerStyle ?? (item.profile === 'business' ? 'accent' : 'none')}
+            onChange={event => update({ dividerStyle: event.currentTarget.value as DividerStyle })}>
+            <option value="none">Kein Trennstrich</option>
+            <option value="accent">Akzentfarbe (wie im Beispiel)</option>
+            <option value="gray">Dezentes Grau</option>
+          </select>
+        </label>
+        {(item.dividerStyle === 'accent' || item.dividerStyle === 'gray') && (
+          <label className="block space-y-1">
+            <span className="text-[11px] font-medium text-gray-600">Strichstärke</span>
+            <select className={inputClass} value={item.dividerWidth ?? 2}
+              onChange={event => update({ dividerWidth: Number(event.currentTarget.value) })}>
+              <option value="1">1 px (fein)</option>
+              <option value="2">2 px (markant wie Vorlage)</option>
+              <option value="3">3 px (kräftig)</option>
+            </select>
+          </label>
+        )}
+        <label className="block space-y-1">
+          <span className="text-[11px] font-medium text-gray-600">Vertikale Ausrichtung</span>
+          <select className={inputClass} value={item.valign ?? (item.profile === 'business' ? 'middle' : 'top')}
+            onChange={event => update({ valign: event.currentTarget.value as VerticalAlign })}>
+            <option value="middle">Mittig zentriert (ausbalanciert)</option>
+            <option value="top">Oben bündig</option>
+          </select>
+        </label>
+      </div>
+    );
+  }
+
   function widthSlider(label: string, value: number, onChange: (value: number) => void) {
     return (
       <label className="block space-y-1">
@@ -497,6 +540,84 @@ export function MailSignaturesView() {
         </div>
       );
     }
+    if (activeSelection === 'divider') {
+      const isVertical = item.layout === 'columns' && item.dividerStyle && item.dividerStyle !== 'none';
+      return (
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-gray-500">Ausrichtung der Linie</span>
+            <div className="flex rounded-xl bg-[#F5F5F7] p-0.5" role="group" aria-label="Ausrichtung der Trennlinie">
+              <button
+                type="button"
+                className={segmentClass}
+                aria-pressed={!isVertical}
+                onClick={() => {
+                  update({ showDivider: true });
+                }}
+              >
+                Waagerecht
+              </button>
+              <button
+                type="button"
+                className={segmentClass}
+                aria-pressed={isVertical}
+                onClick={() => {
+                  update({
+                    layout: 'columns',
+                    dividerStyle: item.dividerStyle && item.dividerStyle !== 'none' ? item.dividerStyle : 'accent',
+                    valign: item.valign ?? 'middle',
+                  });
+                }}
+              >
+                Senkrecht (am Logo)
+              </button>
+            </div>
+          </div>
+
+          {isVertical ? (
+            <div className="space-y-2.5 rounded-xl border border-blue-200/70 bg-blue-50/40 p-2.5">
+              <span className="text-[11px] font-bold text-blue-900">Senkrechter Strich neben dem Logo</span>
+              {!hasLogo && (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] text-gray-600">Lade noch ein Logo oder Foto hoch, damit der Strich daneben steht:</p>
+                  <button type="button" className={`${secondaryClass} w-full`} onClick={() => imageInput.current?.click()}>
+                    <ImagePlus size={14} /> Logo / Foto hinzufügen
+                  </button>
+                </div>
+              )}
+              {columnDividerControls(item)}
+            </div>
+          ) : (
+            <>
+              <label className="block space-y-1">
+                <span className="text-[11px] font-semibold text-gray-500">Linienfarbe</span>
+                <select className={inputClass} value={item.horizontalDividerColor ?? 'gray'}
+                  onChange={event => update({ horizontalDividerColor: event.currentTarget.value as 'accent' | 'gray' })}>
+                  <option value="gray">Dezentes Grau</option>
+                  <option value="accent">Akzentfarbe</option>
+                </select>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-[11px] font-semibold text-gray-500">Linienstärke</span>
+                <select className={inputClass} value={item.horizontalDividerWidth ?? 1}
+                  onChange={event => update({ horizontalDividerWidth: Number(event.currentTarget.value) })}>
+                  <option value="1">1 px (fein)</option>
+                  <option value="2">2 px (markant)</option>
+                  <option value="3">3 px (kräftig)</option>
+                </select>
+              </label>
+            </>
+          )}
+
+          <button type="button" className={`${secondaryClass} w-full text-red-600 hover:bg-red-50`} onClick={() => {
+            clear('divider');
+            if (isVertical) update({ dividerStyle: 'none' });
+          }}>
+            <Trash2 size={14} /> Trennlinie entfernen
+          </button>
+        </div>
+      );
+    }
     if (activeSelection === 'logo') {
       return (
         <div className="space-y-3">
@@ -514,7 +635,35 @@ export function MailSignaturesView() {
             </button>
           </div>
           {widthSlider('Breite', item.imageWidth, width => changeImageWidth('logo', width))}
-          {layoutSwitch()}
+          
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-gray-500">Bildform & Stil</span>
+            <div className="flex rounded-xl bg-[#F5F5F7] p-0.5" role="group" aria-label="Bildform">
+              <button type="button" className={segmentClass} aria-pressed={(!item.imageShape || item.imageShape === 'square')}
+                onClick={() => update({ imageShape: 'square' })}>Eckig</button>
+              <button type="button" className={segmentClass} aria-pressed={item.imageShape === 'rounded'}
+                onClick={() => update({ imageShape: 'rounded' })}>Abgerundet</button>
+              <button type="button" className={segmentClass} aria-pressed={item.imageShape === 'circle'}
+                onClick={() => update({ imageShape: 'circle' })}>Rund (Avatar)</button>
+            </div>
+            <label className="flex items-center gap-2 pt-1 text-[11px] font-medium text-gray-700 cursor-pointer">
+              <input type="checkbox" checked={Boolean(item.imageBorder)} onChange={event => update({ imageBorder: event.currentTarget.checked })} />
+              Feiner Rahmen um die Grafik
+            </label>
+          </div>
+
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-gray-500">Anordnung</span>
+            {layoutSwitch()}
+          </div>
+
+          {item.layout === 'columns' && (
+            <div className="space-y-2 border-t border-gray-100 pt-3">
+              <span className="text-[11px] font-semibold text-gray-500">Trennstrich & Ausrichtung</span>
+              {columnDividerControls(item)}
+            </div>
+          )}
+
           {textField('imageAlt')}
           {textField('imageUrl')}
           {item.imageUrl && !httpsUrl(item.imageUrl) && <p className="text-[11px] text-amber-800">Gib eine vollständige HTTPS-Adresse für die Grafik ein.</p>}
@@ -551,13 +700,26 @@ export function MailSignaturesView() {
               onClick={() => setIdentityTarget('identity')}>Kontaktdaten</button>
           </div>
           <SignatureStylePanel project={item} target={identityTarget} onChangeStyle={changeTextStyle} />
+
+          <div className="space-y-1 border-t border-gray-100 pt-3">
+            <span className="text-[11px] font-semibold text-gray-500">Kontaktzeilen-Beschriftung</span>
+            <select className={inputClass} value={item.contactLabels ?? (item.profile === 'business' ? 'text' : 'none')}
+              onChange={event => update({ contactLabels: event.currentTarget.value as ContactLabelStyle })}>
+              <option value="text">Klassisch (Tel., E-Mail, Web)</option>
+              <option value="compact">Kompakt (T:, E:, W:)</option>
+              <option value="icon">Symbole (📞, ✉️, 🌐)</option>
+              <option value="none">Ohne Präfix (nur Kontaktdaten)</option>
+            </select>
+          </div>
+
           <div className="space-y-2 border-t border-gray-100 pt-3">
-            <span className="text-[11px] font-semibold text-gray-500">Logo / Foto</span>
+            <span className="text-[11px] font-semibold text-gray-500">Logo / Foto & Trennstrich</span>
             {hasLogo ? (
               <>
                 {layoutSwitch()}
+                {item.layout === 'columns' && columnDividerControls(item)}
                 <button type="button" className={`${secondaryClass} w-full`} onClick={() => setSelection('logo')}>
-                  <ImagePlus size={14} /> Grafik bearbeiten
+                  <ImagePlus size={14} /> Grafik & Form bearbeiten
                 </button>
               </>
             ) : (
@@ -729,7 +891,13 @@ export function MailSignaturesView() {
             {project.profile === 'business' && (
               <div className="grid grid-cols-2 gap-2">{(['role', 'company'] as const).map(key => textField(key))}</div>
             )}
-            {(['email', 'phone', 'website', 'social'] as const).map(key => textField(key))}
+            {textField('address')}
+            {(['phone', 'email', 'website', 'social'] as const).map(key => textField(key))}
+            <div className="space-y-1.5 rounded-xl border border-gray-200/70 bg-[#F5F5F7]/60 p-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Aktions-Button (optional)</span>
+              {textField('ctaText')}
+              {textField('ctaUrl')}
+            </div>
             {textField('greeting')}
             {textField('note', true)}
             {project.profile === 'business' && textField('legal', true)}
@@ -818,8 +986,17 @@ export function MailSignaturesView() {
                       {Object.keys(signatureFonts).map(font => <option key={font}>{font}</option>)}
                     </select>
                   </label>
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-semibold text-gray-500">Zeilenabstand</span>
+                    <select className={inputClass} value={project.spacing ?? 'normal'}
+                      onChange={event => update({ spacing: event.currentTarget.value as SpacingStyle })}>
+                      <option value="compact">Kompakt (knapper Raum)</option>
+                      <option value="normal">Standard (harmonisch)</option>
+                      <option value="relaxed">Luftig (moderner Freiraum)</option>
+                    </select>
+                  </label>
                   <div className="space-y-1">
-                    <span className="text-[11px] font-semibold text-gray-500">Akzentfarbe (Name und Links)</span>
+                    <span className="text-[11px] font-semibold text-gray-500">Akzentfarbe (Name, Trennstrich & Links)</span>
                     <div className="flex flex-wrap items-center gap-1.5">
                       {accentSwatches.map(color => (
                         <button key={color} type="button" aria-label={`Akzentfarbe ${color}`} aria-pressed={project.color.toLowerCase() === color.toLowerCase()}
@@ -834,6 +1011,7 @@ export function MailSignaturesView() {
                     <div className="space-y-1">
                       <span className="text-[11px] font-semibold text-gray-500">Anordnung</span>
                       {layoutSwitch()}
+                      {project.layout === 'columns' && columnDividerControls(project)}
                     </div>
                   )}
                 </div>

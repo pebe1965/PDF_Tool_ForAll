@@ -309,7 +309,7 @@ export function SignatureCanvas({
                           {selection === 'logo' ? (
                             <button type="button" className="rounded-lg p-1 text-gray-600 hover:bg-gray-100" title="Grafik ersetzen"
                               aria-label="Grafik ersetzen" onClick={onReplaceImage}><ImagePlus size={14} /></button>
-                          ) : block.key !== 'textArt' && (
+                          ) : block.key !== 'textArt' && block.key !== 'divider' && (
                             <button type="button" className="rounded-lg p-1 text-gray-600 hover:bg-gray-100" title="Text bearbeiten (Doppelklick)"
                               aria-label="Text bearbeiten" onClick={() => startEdit(block.key)}><Pencil size={14} /></button>
                           )}

@@ -6,10 +6,13 @@ export const fields = {
   name: 'Name',
   role: 'Position',
   company: 'Firma',
+  address: 'Adresse / Standort',
   email: 'E-Mail',
   phone: 'Telefon',
   website: 'Website',
   social: 'Weiterer Link',
+  ctaText: 'Aktions-Button (Text)',
+  ctaUrl: 'Aktions-Button (Link)',
   note: 'Freier Text',
   legal: 'Pflichtangaben / Rechtstext',
   imageAlt: 'Alternativtext',
@@ -18,6 +21,7 @@ export const fields = {
 
 export const signatureBlocks = {
   greeting: 'Grußformel',
+  divider: 'Trennlinie',
   identity: 'Name, Kontakt und Logo',
   textArt: 'TextArt',
   note: 'Freier Text',
@@ -39,7 +43,7 @@ export const signatureFonts = {
 };
 
 export type SignatureFont = keyof typeof signatureFonts;
-export type SignatureTextTarget = Exclude<SignatureBlock, 'textArt'> | 'name';
+export type SignatureTextTarget = Exclude<SignatureBlock, 'textArt' | 'divider'> | 'name';
 export type SignatureTextStyle = {
   font: SignatureFont;
   size: number;
@@ -50,6 +54,12 @@ export type SignatureTextStyle = {
 export type SignatureTextStyles = Partial<Record<SignatureTextTarget, Partial<SignatureTextStyle>>>;
 export type SignatureArtwork = { image: string; alt: string; width: number };
 
+export type DividerStyle = 'none' | 'accent' | 'gray';
+export type ImageShape = 'square' | 'rounded' | 'circle';
+export type VerticalAlign = 'top' | 'middle';
+export type ContactLabelStyle = 'none' | 'text' | 'compact' | 'icon';
+export type SpacingStyle = 'compact' | 'normal' | 'relaxed';
+
 export type SignatureFields = Record<keyof typeof fields, string>;
 export type SignatureProject = SignatureFields & {
   id: string;
@@ -59,6 +69,16 @@ export type SignatureProject = SignatureFields & {
   color: string;
   image: string;
   imageWidth: number;
+  dividerStyle?: DividerStyle;
+  dividerWidth?: number;
+  valign?: VerticalAlign;
+  imageShape?: ImageShape;
+  imageBorder?: boolean;
+  contactLabels?: ContactLabelStyle;
+  spacing?: SpacingStyle;
+  showDivider?: boolean;
+  horizontalDividerColor?: 'accent' | 'gray';
+  horizontalDividerWidth?: number;
   textArt?: SignatureArtwork;
   textStyles?: SignatureTextStyles;
   blockOrder: SignatureBlock[];
@@ -87,6 +107,16 @@ export function createSignature(profile: SignatureProject['profile']): Signature
     color: '#145a8d',
     image: '',
     imageWidth: 112,
+    dividerStyle: profile === 'business' ? 'accent' : 'none',
+    dividerWidth: 2,
+    valign: 'middle',
+    imageShape: 'square',
+    imageBorder: false,
+    contactLabels: profile === 'business' ? 'text' : 'none',
+    spacing: 'normal',
+    showDivider: false,
+    horizontalDividerColor: 'gray',
+    horizontalDividerWidth: 1,
     blockOrder: [...defaultOrder],
   };
 }
@@ -153,8 +183,9 @@ export function signatureTextStyle(project: SignatureProject, target: SignatureT
   };
 }
 
-function textStyleCss(style: SignatureTextStyle) {
-  return `font-family:${signatureFonts[style.font]};font-size:${style.size}px;line-height:1.45;color:${style.color};font-weight:${style.bold ? 'bold' : 'normal'};font-style:${style.italic ? 'italic' : 'normal'};overflow-wrap:anywhere;`;
+function textStyleCss(style: SignatureTextStyle, spacing: SpacingStyle = 'normal') {
+  const lineHeight = spacing === 'compact' ? '1.3' : spacing === 'relaxed' ? '1.65' : '1.45';
+  return `font-family:${signatureFonts[style.font]};font-size:${style.size}px;line-height:${lineHeight};color:${style.color};font-weight:${style.bold ? 'bold' : 'normal'};font-style:${style.italic ? 'italic' : 'normal'};overflow-wrap:anywhere;`;
 }
 
 export type SignatureImageSlot = 'logo' | 'textArt';
@@ -169,61 +200,125 @@ type SignatureRenderOptions = {
 };
 
 function renderImage(
-  source: string, widthValue: number, alt: string, inline?: InlineImages[SignatureImageSlot], slot?: SignatureImageSlot,
+  source: string,
+  widthValue: number,
+  alt: string,
+  inline?: InlineImages[SignatureImageSlot],
+  slot?: SignatureImageSlot,
+  shape: ImageShape = 'square',
+  border = false,
 ) {
   const src = inline ? `cid:${inline.contentId}` : source;
   if (!src) return '';
   const width = signatureImageWidth(widthValue);
   const height = inline ? ` height="${inline.height}"` : '';
   const marker = slot ? ` data-signature-image="${slot}" draggable="false"` : '';
-  // Mail uses the alternative text when naming an inline image copied from a message.
   const description = alt.trim() || (inline ? 'Signaturgrafik' : '');
-  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(description)}" width="${width}"${height}${marker} style="display:block;width:${width}px;max-width:100%;height:auto;border:0;">`;
+  const borderRadius = shape === 'circle' ? 'border-radius:50%;' : shape === 'rounded' ? 'border-radius:8px;' : '';
+  const borderCss = border ? 'border:1px solid #d2d2d7;' : 'border:0;';
+  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(description)}" width="${width}"${height}${marker} style="display:block;width:${width}px;max-width:100%;height:auto;${borderRadius}${borderCss}">`;
 }
 
 export function renderSignature(project: SignatureProject, options: SignatureRenderOptions = {}) {
   const color = project.textStyles?.identity?.color;
   const linkColor = isColor(color) ? color : isColor(project.color) ? project.color : '#145a8d';
-  const style = (target: SignatureTextTarget) => textStyleCss(signatureTextStyle(project, target));
+  const spacing = project.spacing ?? 'normal';
+  const style = (target: SignatureTextTarget) => textStyleCss(signatureTextStyle(project, target), spacing);
   const text = (value: string) => escapeHtml(value.trim()).replace(/\r?\n/g, '<br>');
   const link = (value: string, href: string) => href
     ? `<a href="${escapeHtml(href)}" style="color:${linkColor};text-decoration:underline;">${text(value)}</a>`
     : text(value);
+
+  const labelStyle = project.contactLabels ?? (project.profile === 'business' ? 'text' : 'none');
+  const labels = {
+    phone: labelStyle === 'icon' ? '📞 ' : labelStyle === 'compact' ? 'T: ' : labelStyle === 'text' ? 'Tel. ' : '',
+    email: labelStyle === 'icon' ? '✉️ ' : labelStyle === 'compact' ? 'E: ' : labelStyle === 'text' ? 'E-Mail: ' : '',
+    website: labelStyle === 'icon' ? '🌐 ' : labelStyle === 'compact' ? 'W: ' : labelStyle === 'text' ? 'Web: ' : '',
+    address: labelStyle === 'icon' ? '📍 ' : '',
+  };
+
   const email = project.email.trim();
   const phone = project.phone.trim();
   const phoneNumber = phone.replace(/[^\d+]/g, '');
+  const address = project.address ? project.address.trim() : '';
+
+  const ctaText = project.ctaText ? project.ctaText.trim() : '';
+  const ctaUrl = project.ctaUrl ? project.ctaUrl.trim() : '';
+  const ctaHref = httpsUrl(ctaUrl) || (ctaUrl.startsWith('mailto:') ? ctaUrl : '');
+  const ctaButton = ctaText ? (
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;"><tr><td style="background-color:${linkColor};border-radius:6px;padding:6px 14px;text-align:center;"><a href="${escapeHtml(ctaHref || '#')}" target="_blank" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:12px;font-family:${signatureFonts[signatureTextStyle(project, 'name').font]};display:inline-block;">${escapeHtml(ctaText)}</a></td></tr></table>`
+  ) : '';
+
   const contact = [
-    link(email, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? `mailto:${encodeURIComponent(email).replace('%40', '@')}` : ''),
-    link(phone, /^\+?\d+$/.test(phoneNumber) ? `tel:${phoneNumber}` : ''),
-    link(project.website, httpsUrl(project.website)),
+    address && `${labels.address}${text(address)}`,
+    phone && `${labels.phone}${link(phone, /^\+?\d+$/.test(phoneNumber) ? `tel:${phoneNumber}` : '')}`,
+    email && `${labels.email}${link(email, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? `mailto:${encodeURIComponent(email).replace('%40', '@')}` : '')}`,
+    project.website && `${labels.website}${link(project.website, httpsUrl(project.website))}`,
     link(project.social, httpsUrl(project.social)),
+    ctaButton,
   ].filter(Boolean).join('<br>');
+
   const identity = [
     project.name.trim() && `<span style="${style('name')}">${text(project.name)}</span>`,
     text(project.role),
     text(project.company),
     contact,
   ].filter(Boolean).join('<br>');
+
   const localImage = imageDataUrl(project.image);
   const remoteImage = httpsUrl(project.imageUrl);
   const logoSrc = options.preferLocalImage ? localImage || remoteImage : remoteImage || localImage;
+  const imageShape = project.imageShape ?? 'square';
+  const imageBorder = Boolean(project.imageBorder);
   const logo = options.hideImage ? '' : renderImage(
-    logoSrc, project.imageWidth, project.imageAlt, options.inlineImages?.logo, options.markImages ? 'logo' : undefined,
+    logoSrc,
+    project.imageWidth,
+    project.imageAlt,
+    options.inlineImages?.logo,
+    options.markImages ? 'logo' : undefined,
+    imageShape,
+    imageBorder,
   );
   const art = project.textArt;
   const artwork = !options.hideImage && art
-    ? renderImage(imageDataUrl(art.image), art.width, art.alt, options.inlineImages?.textArt, options.markImages ? 'textArt' : undefined)
+    ? renderImage(
+        imageDataUrl(art.image),
+        art.width,
+        art.alt,
+        options.inlineImages?.textArt,
+        options.markImages ? 'textArt' : undefined,
+      )
     : '';
+
   const identityStyle = style('identity');
+
+  const dividerStyle = project.dividerStyle ?? (project.profile === 'business' ? 'accent' : 'none');
+  const dividerWidth = project.dividerWidth ?? 2;
+  const dividerColor = dividerStyle === 'accent' ? linkColor : dividerStyle === 'gray' ? '#d2d2d7' : 'transparent';
+  const hasDivider = dividerStyle !== 'none';
+  const vAlign = project.valign ?? (project.profile === 'business' ? 'middle' : 'top');
+
+  const identityColStyle = hasDivider
+    ? `padding:0 0 0 14px;border-left:${dividerWidth}px solid ${dividerColor};${identityStyle}`
+    : `padding:0 0 0 12px;${identityStyle}`;
+
   const identityBlock = project.layout === 'columns' && logo && identity
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr><td valign="top" style="padding:0 12px 0 0;">${logo}</td><td valign="top" style="${identityStyle}">${identity}</td></tr></table>`
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr><td valign="${vAlign}" style="padding:0 ${hasDivider ? '14px' : '0'} 0 0;">${logo}</td><td valign="${vAlign}" style="${identityColStyle}">${identity}</td></tr></table>`
     : [identity, logo].filter(Boolean).join('<br>');
+
+  const hDividerColor = project.horizontalDividerColor === 'accent' ? linkColor : '#d2d2d7';
+  const hDividerWidth = project.horizontalDividerWidth ?? 1;
+  const dividerHtml = project.showDivider
+    ? `<hr style="border:0;border-top:${hDividerWidth}px solid ${hDividerColor};margin:6px 0;width:100%;">`
+    : '';
+
   const blocks = {
     greeting: { html: text(project.greeting), plain: project.greeting, style: style('greeting') + 'padding-bottom:6px;' },
+    divider: { html: dividerHtml, plain: project.showDivider ? '---' : '', style: 'padding:3px 0;' },
     identity: {
       html: identityBlock,
-      plain: [project.name, project.role, project.company, email, phone, project.website, project.social]
-        .map(value => value.trim()).filter(Boolean).join('\n'),
+      plain: [project.name, project.role, project.company, address, phone, email, project.website, project.social, ctaText]
+        .map(value => (value || '').trim()).filter(Boolean).join('\n'),
       style: identityStyle,
     },
     textArt: { html: artwork, plain: art?.alt ?? '', style: 'padding-top:6px;' },
@@ -362,6 +457,16 @@ export async function importSignature(file: File): Promise<SignatureProject> {
     if (isColor(source.color)) project.color = source.color;
     if (typeof source.image === 'string') project.image = imageDataUrl(source.image);
     if (Number.isFinite(source.imageWidth)) project.imageWidth = signatureImageWidth(source.imageWidth);
+    if (['none', 'accent', 'gray'].includes(source.dividerStyle)) project.dividerStyle = source.dividerStyle;
+    if (Number.isFinite(source.dividerWidth)) project.dividerWidth = Math.max(1, Math.min(4, Math.round(source.dividerWidth)));
+    if (['top', 'middle'].includes(source.valign)) project.valign = source.valign;
+    if (['square', 'rounded', 'circle'].includes(source.imageShape)) project.imageShape = source.imageShape;
+    if (typeof source.imageBorder === 'boolean') project.imageBorder = source.imageBorder;
+    if (['none', 'text', 'compact', 'icon'].includes(source.contactLabels)) project.contactLabels = source.contactLabels;
+    if (['compact', 'normal', 'relaxed'].includes(source.spacing)) project.spacing = source.spacing;
+    if (typeof source.showDivider === 'boolean') project.showDivider = source.showDivider;
+    if (['accent', 'gray'].includes(source.horizontalDividerColor)) project.horizontalDividerColor = source.horizontalDividerColor;
+    if (Number.isFinite(source.horizontalDividerWidth)) project.horizontalDividerWidth = Math.max(1, Math.min(3, Math.round(source.horizontalDividerWidth)));
     if (Array.isArray(source.blockOrder)) project.blockOrder = signatureBlockOrder(source.blockOrder);
     const artImage = typeof source.textArt?.image === 'string' ? imageDataUrl(source.textArt.image) : '';
     if (artImage) {
