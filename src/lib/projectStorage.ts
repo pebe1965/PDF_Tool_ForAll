@@ -142,7 +142,7 @@ export async function exportProjectFile(
         suggestedName: finalName,
         types: [
           {
-            description: 'PDF Tool Projektdatei (.pdftool)',
+            description: 'Toolbox-Projektdatei (.pdftool)',
             accept: { 'application/json': ['.pdftool'] },
           },
         ],

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PDF Tool ForAll — Lokaler Produktions-Server
+Toolbox – PDF, Bilder & mehr — Lokaler Produktions-Server
 Startet die Anwendung ohne externe Abhängigkeiten auf macOS und Windows.
 """
 
@@ -59,7 +59,7 @@ class SinglePageAppHandler(SimpleHTTPRequestHandler):
             try:
                 req = urllib.request.Request(
                     GITHUB_RELEASE_API,
-                    headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "PDF-Tool-ForAll-Updater"}
+                    headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "Toolbox-Updater"}
                 )
                 with urllib.request.urlopen(req, timeout=20) as resp:
                     release_data = json.loads(resp.read().decode("utf-8"))
@@ -80,7 +80,7 @@ class SinglePageAppHandler(SimpleHTTPRequestHandler):
                 with tempfile.TemporaryDirectory() as tmpdir:
                     tmp_path = Path(tmpdir)
                     zip_file_path = tmp_path / "update.zip"
-                    dl_req = urllib.request.Request(zip_url, headers={"User-Agent": "PDF-Tool-ForAll-Updater"})
+                    dl_req = urllib.request.Request(zip_url, headers={"User-Agent": "Toolbox-Updater"})
                     with urllib.request.urlopen(dl_req, timeout=60) as dl_resp, open(zip_file_path, "wb") as out_f:
                         shutil.copyfileobj(dl_resp, out_f)
 
@@ -132,7 +132,7 @@ def main():
 
     server = ThreadingHTTPServer(('127.0.0.1', port), SinglePageAppHandler)
     print("=" * 60)
-    print("🚀 PDF Tool ForAll — Lokale Desktop-Engine läuft!")
+    print("🚀 Toolbox – PDF, Bilder & mehr — Lokale Desktop-Engine läuft!")
     print(f"🌐 Geöffnet auf: {url}")
     print("🔒 100 % lokal, ohne Cloud & ohne Datenübertragung.")
     print("Drücke [Ctrl + C] im Terminal, um das Tool zu beenden.")
@@ -158,7 +158,7 @@ def main():
     try:
         server.serve_forever()
     except (KeyboardInterrupt, SystemExit):
-        print("\n👋 PDF Tool ForAll beendet. Auf Wiedersehen!")
+        print("\n👋 Toolbox – PDF, Bilder & mehr beendet. Auf Wiedersehen!")
         server.server_close()
 
 if __name__ == "__main__":

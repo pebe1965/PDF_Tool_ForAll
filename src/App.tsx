@@ -5,6 +5,10 @@ import { PdfMergeView } from './components/PdfMergeView';
 import { PdfToolsView } from './components/PdfToolsView';
 import { SettingsModal } from './components/SettingsModal';
 
+const ImageEditorView = lazy(() => import('./components/ImageEditorView').then(
+  module => ({ default: module.ImageEditorView }),
+));
+
 const MailSignaturesView = lazy(() => import('./components/MailSignaturesView').then(
   module => ({ default: module.MailSignaturesView }),
 ));
@@ -15,6 +19,9 @@ export function App() {
   const [sharedFileName, setSharedFileName] = useState<string>('Dokument.pdf');
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  // Bilder-Bereich erst beim ersten Öffnen laden, danach geöffnet lassen (Bild bleibt erhalten)
+  const [imagesVisited, setImagesVisited] = useState(false);
+  if (activeTab === 'images' && !imagesVisited) setImagesVisited(true);
 
   // When Editor updates its working document
   const handleEditorPdfUpdate = (bytes: ArrayBuffer, fileName: string) => {
@@ -51,6 +58,7 @@ export function App() {
             onOpenMergeTab={() => setActiveTab('merge')}
             onOpenToolsTab={() => setActiveTab('tools')}
             onOpenMailSignatures={() => setActiveTab('mail-signatures')}
+            onOpenImages={() => setActiveTab('images')}
             isActive={activeTab === 'home' || activeTab === 'editor'}
             onGoHome={() => setActiveTab('home')}
             isHomeView={activeTab === 'home'}
@@ -77,6 +85,17 @@ export function App() {
             onGoHome={() => setActiveTab('home')}
           />
         </div>
+        {imagesVisited && (
+          <div className={activeTab === 'images' ? 'absolute inset-0' : 'hidden'}>
+            <Suspense fallback={<p className="p-6">Bilder-Bereich wird geladen …</p>}>
+              <ImageEditorView
+                isActive={activeTab === 'images'}
+                onGoHome={() => setActiveTab('home')}
+                onSendToEditor={handleSyncToEditor}
+              />
+            </Suspense>
+          </div>
+        )}
         {activeTab === 'mail-signatures' && (
           <Suspense fallback={<p className="p-6">Signaturbereich wird geladen …</p>}>
             <MailSignaturesView />

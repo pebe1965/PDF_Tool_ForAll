@@ -176,7 +176,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-[#1D1D1F]">Einstellungen & Updates</h2>
-              <p className="text-xs text-gray-500">PDF Tool ForAll • v{APP_VERSION}</p>
+              <p className="text-xs text-gray-500">Toolbox – PDF, Bilder & mehr • v{APP_VERSION}</p>
             </div>
           </div>
 
@@ -394,7 +394,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div>
                   <p className="font-semibold">KI über dein NotionaryAtlas-Konto</p>
                   <p className="text-[11px] text-indigo-800 mt-0.5 leading-relaxed">
-                    Erstelle im Marketplace von NotionaryAtlas beim PDF Tool einen Zugangscode und füge ihn hier ein.
+                    Erstelle im Marketplace von NotionaryAtlas bei der Toolbox einen Zugangscode und füge ihn hier ein.
                     Abgerechnet wird über die KI-Credits deines Kontos – ein eigener Gemini-Schlüssel ist nicht nötig.
                   </p>
                   <a
@@ -549,13 +549,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     📄
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-[#1D1D1F]">PDF Tool ForAll</h4>
+                    <h4 className="font-bold text-sm text-[#1D1D1F]">Toolbox – PDF, Bilder & mehr</h4>
                     <p className="text-[11px] text-gray-500">Version v{APP_VERSION} • Open Source</p>
                   </div>
                 </div>
                 <p className="text-gray-700 pt-1">
-                  Ein leistungsstarkes, komplett lokales Werkzeug zum Bearbeiten, Zusammenführen,
-                  Signieren und KI-gestützten Übersetzen/Analysieren von PDF-Dokumenten.
+                  Eine komplett lokale Werkzeugkiste zum Bearbeiten, Zusammenführen und
+                  Signieren von PDFs, zum Unkenntlichmachen und Bearbeiten von Bildern und für E-Mail-Signaturen.
                 </p>
               </div>
 
@@ -564,7 +564,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div>
                   <h5 className="font-semibold text-xs text-emerald-900">100 % Lokale Datenverarbeitung</h5>
                   <p className="text-[11px] text-emerald-800 mt-0.5">
-                    Alle PDF-Bearbeitungen, Signaturen und Zusammenführungen finden ausschließlich lokal in deinem Browser / auf deinem Rechner statt. Keine Dokumentendaten verlassen jemals dein Gerät.
+                    Alle Bearbeitungen von PDFs und Bildern finden ausschließlich lokal in deinem Browser / auf deinem Rechner statt. Keine Dokumentendaten verlassen jemals dein Gerät.
                   </p>
                 </div>
               </div>
@@ -588,7 +588,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-3.5 bg-[#F5F5F7] border-t border-[#E8E8ED]">
           <span className="text-[11px] text-gray-400">
-            PDF Tool ForAll • Kostenlos & Frei
+            Toolbox – PDF, Bilder & mehr • Kostenlos & Frei
           </span>
           <button
             onClick={onClose}

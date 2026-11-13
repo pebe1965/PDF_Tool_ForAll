@@ -3,6 +3,24 @@
 Dieses Tool wird öffentlich auf GitHub veröffentlicht und als DMG/ZIP
 heruntergeladen. **Alles, was im Code oder im Paket steht, ist öffentlich.**
 
+## 0. Name des Programms
+
+Seit November 2026 heißt das Programm **„Toolbox – PDF, Bilder & mehr“**
+(Kurzname **„Toolbox“** für Mac-Menü, Dock und iPad-Homescreen). Früher:
+„PDF Tool ForAll“. Nur die **sichtbaren Texte** wurden umbenannt. Diese
+technischen Kennungen bleiben absichtlich gleich, sonst verlieren Nutzer
+Daten oder Updates:
+
+- `CFBundleIdentifier` `com.pebe.pdftoolforall` (daran hängt der Speicher des
+  Mac-Fensters: Unterschriften, Stempel, Signaturen, Einstellungen)
+- GitHub-Repo `pebe1965/PDF_Tool_ForAll`, `slug` `pdf-tool-forall`
+- Speicherschlüssel `pdf_tool_*`, Datenbanknamen, Dateiendung `.pdftool`
+- Paketnamen `PDF_Tool_ForAll.app/.dmg/_Windows.zip` und
+  `PDF_Tool_Windows.bat`
+
+Den Namen im Marketplace ändert der Admin im Admin-Panel von NotionaryAtlas
+(das Text-Skript in Schritt 8 schreibt ihn nicht).
+
 ## 1. Niemals einen API-Schlüssel einbauen
 
 - Kein Gemini-, Google- oder sonstiger Schlüssel in `src/`, `dist/`, `server.py`,
@@ -90,7 +108,7 @@ der Funktionsliste von v1.1.0.
    (der Marketplace und die Update-Prüfung lesen nur `releases/latest`):
    ```bash
    gh release create vX.Y.Z PDF_Tool_ForAll.dmg PDF_Tool_ForAll_Windows.zip \
-     --title "PDF Tool ForAll vX.Y.Z — <kurzer Titel>" --notes-file <hinweise.md>
+     --title "Toolbox – PDF, Bilder & mehr vX.Y.Z — <kurzer Titel>" --notes-file <hinweise.md>
    ```
    **Genau diese zwei Dateien mit genau diesen Namen.** `.dmg` = macOS,
    `…Windows….zip` = Windows (der Marketplace erkennt die Plattform am

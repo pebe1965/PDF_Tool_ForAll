@@ -1,6 +1,6 @@
-# PDF Tool ForAll — Business Suite 📄✍️🏢
+# Toolbox – PDF, Bilder & mehr 🧰
 
-Ein 100% kostenloses, privates und lokales PDF-Werkzeug für **macOS**, **Windows** und **iPadOS**.
+Eine 100% kostenlose, private und lokale Werkzeugkiste für PDFs, Bilder und E-Mail-Signaturen – für **macOS**, **Windows** und **iPadOS**. (Früherer Name: PDF Tool ForAll.)
 
 Keine Abonnements, kein Cloud-Upload für lokale PDF-Bearbeitung, keine Limits.
 
@@ -49,6 +49,13 @@ Die fertigen Pakete findest du immer unter **[GitHub Releases](https://github.co
   - Automatische Seitennummerierung (`Seite 1 von N`, `Bates #000001`), Kopf-/Fußzeilen und diagonale **Wasserzeichen** (`VERTRAULICH`, `ENTWURF`, `MUSTER`) über alle Seiten.
 - **Unterschriften (Signatur)** & **Bilder / Screenshots (`Cmd+V` / `Strg+V`)**.
 - **Undo / Redo (`Cmd+Z` / `Cmd+Shift+Z`)**, **Volltextsuche (`Cmd+F`)** sowie **Auto-Save (IndexedDB)** und Export/Import als bearbeitbare **`.pdftool`-Projektdatei**.
+
+### 🖼️ Bilder bearbeiten & unkenntlich machen
+- Bild öffnen per Auswahl, Drag & Drop oder **Bildschirmfoto mit `Cmd+V` / `Strg+V` einfügen** (JPG, PNG, WebP, GIF, BMP, HEIC auf dem Mac).
+- Bereiche mit **Rechteck, Ellipse oder Pinsel** markieren, verschieben und in der Größe ändern.
+- Methoden: **Farbbalken**, **Verpixeln**, **Weichzeichnen** und **Milchglas** – mit Stärkeregler und Hinweis, ob die Einstellung sicher ist. **Umkehren** macht alles außerhalb des Bereichs unkenntlich.
+- Zuschneiden, drehen, spiegeln, Größe ändern, Rückgängig/Wiederholen.
+- Speichern **immer als Kopie** (PNG, JPEG, WebP) – ohne GPS-Position, Kameradaten und eingebettete Vorschau. Außerdem: in die Zwischenablage kopieren, als PDF speichern oder im PDF-Editor weiterbearbeiten.
 
 ### 2. 📑 Zusammenführen & Sortieren (PDFs & Bilder)
 - **PDFs & Bilder (`.png`, `.jpg`, `.webp`) vereinen**: Auch abfotografierte Belege oder Screenshots werden automatisch in DIN-A4-Seiten umgewandelt.

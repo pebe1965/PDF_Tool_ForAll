@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 PROJECT_DIR="$(pwd)"
 
 echo "=================================================="
-echo "🔨 Erstelle Release-Pakete fuer PDF Tool ForAll"
+echo "🔨 Erstelle Release-Pakete fuer Toolbox – PDF, Bilder & mehr"
 echo "=================================================="
 
 # Use local node if available
@@ -39,15 +39,15 @@ cat << 'EOF' > "$APP_BUNDLE/Contents/Info.plist"
     <key>CFBundleIdentifier</key>
     <string>com.pebe.pdftoolforall</string>
     <key>CFBundleName</key>
-    <string>PDF Tool ForAll</string>
+    <string>Toolbox</string>
     <key>CFBundleDisplayName</key>
-    <string>PDF Tool ForAll</string>
+    <string>Toolbox</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.17.1</string>
+    <string>1.18.0</string>
     <key>CFBundleVersion</key>
-    <string>1.17.1</string>
+    <string>1.18.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>NSHighResolutionCapable</key>
@@ -60,7 +60,7 @@ cat << 'EOF' > "$APP_BUNDLE/Contents/Info.plist"
                 <string>pdftool</string>
             </array>
             <key>CFBundleTypeName</key>
-            <string>PDF Tool Project</string>
+            <string>Toolbox-Projekt</string>
             <key>CFBundleTypeRole</key>
             <string>Editor</string>
             <key>LSHandlerRank</key>
@@ -104,7 +104,7 @@ codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || true
 
 # 3. macOS .dmg erstellen
 echo "💿 3. Erstelle macOS Disk Image (PDF_Tool_ForAll.dmg)..."
-hdiutil detach /Volumes/"PDF Tool ForAll" 2>/dev/null || true
+hdiutil detach /Volumes/"Toolbox - PDF, Bilder und mehr" 2>/dev/null || true
 DMG_STAGING="/tmp/dmg_staging_pdftool_$$"
 rm -rf "$DMG_STAGING" "$PROJECT_DIR/PDF_Tool_ForAll.dmg"
 mkdir -p "$DMG_STAGING"
@@ -112,7 +112,7 @@ mkdir -p "$DMG_STAGING"
 cp -R "$APP_BUNDLE" "$DMG_STAGING/"
 ln -s /Applications "$DMG_STAGING/Applications"
 
-hdiutil create -volname "PDF Tool ForAll" -srcfolder "$DMG_STAGING" -ov -format UDZO "$PROJECT_DIR/PDF_Tool_ForAll.dmg"
+hdiutil create -volname "Toolbox - PDF, Bilder und mehr" -srcfolder "$DMG_STAGING" -ov -format UDZO "$PROJECT_DIR/PDF_Tool_ForAll.dmg"
 rm -rf "$DMG_STAGING"
 
 # 4. Windows .zip Release-Paket erstellen
@@ -127,13 +127,13 @@ cp "$PROJECT_DIR/PDF_Tool_Windows.bat" "$WIN_STAGING/"
 
 # Info-Datei fuer Windows Nutzer
 cat << 'EOF' > "$WIN_STAGING/README.txt"
-PDF Tool ForAll — Kostenlos, Lokal & Sicher
-===========================================
+Toolbox – PDF, Bilder & mehr — Kostenlos, Lokal & Sicher
+==========================================================
 
 ANLEITUNG FUER WINDOWS:
 1. Doppelklicke auf "PDF_Tool_Windows.bat"
 2. Das Tool oeffnet sich automatisch in deinem Standard-Browser (z. B. Edge / Chrome)
-3. Viel Spass beim Bearbeiten, Signieren und Zusammenfuehren von PDFs!
+3. Viel Spass beim Bearbeiten von PDFs und Bildern!
 
 TIPP: Du kannst in Microsoft Edge oder Chrome oben in der Adressleiste auf "App installieren" klicken, um das Tool wie ein eigenstaendiges Desktop-Programm im Startmenue und der Taskleiste zu nutzen.
 EOF

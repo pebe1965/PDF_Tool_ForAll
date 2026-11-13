@@ -1,7 +1,7 @@
 {
-  "name": "PDF Tool ForAll",
-  "short_name": "PDF Tool",
-  "description": "Kostenloses, lokales und sicheres PDF-Werkzeug",
+  "name": "Toolbox – PDF, Bilder & mehr",
+  "short_name": "Toolbox",
+  "description": "Kostenlose, lokale Toolbox für PDFs, Bilder und mehr",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#F5F5F7",

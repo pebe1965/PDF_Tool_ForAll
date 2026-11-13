@@ -1,9 +1,9 @@
 @echo off
-title PDF Tool ForAll — Lokaler Starter
+title Toolbox – PDF, Bilder und mehr — Lokaler Starter
 cd /d "%~dp0"
 
 echo ===================================================
-echo   PDF Tool ForAll — Fuer Windows
+echo   Toolbox – PDF, Bilder und mehr — Fuer Windows
 echo ===================================================
 echo.
 

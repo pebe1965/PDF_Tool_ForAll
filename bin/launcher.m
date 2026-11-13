@@ -89,7 +89,7 @@ static NSString *findPythonExecutable(NSString *appDir) {
         if (!pyCmd) {
             NSAlert *alert = [[NSAlert alloc] init];
             alert.messageText = @"Python 3 nicht gefunden";
-            alert.informativeText = @"Python 3 wurde auf diesem Mac nicht gefunden. Bitte installieren Sie Python 3, um PDF Tool ForAll nutzen zu können.";
+            alert.informativeText = @"Python 3 wurde auf diesem Mac nicht gefunden. Bitte installieren Sie Python 3, um die Toolbox nutzen zu können.";
             alert.alertStyle = NSAlertStyleCritical;
             [alert addButtonWithTitle:@"Beenden"];
             [alert runModal];
@@ -178,7 +178,7 @@ static NSString *findPythonExecutable(NSString *appDir) {
                                               styleMask:style
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
-    self.window.title = @"PDF Tool ForAll";
+    self.window.title = @"Toolbox – PDF, Bilder & mehr";
     self.window.minSize = NSMakeSize(780, 560);
     [self.window center];
     [self.window setFrameAutosaveName:@"PDFToolForAllMainWindow"];
@@ -313,7 +313,7 @@ static NSString *findPythonExecutable(NSString *appDir) {
 // JavaScript alert(...) in nativem NSAlert anzeigen
 - (void)webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler {
     NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = @"PDF Tool ForAll";
+    alert.messageText = @"Toolbox";
     alert.informativeText = message ?: @"";
     alert.alertStyle = NSAlertStyleInformational;
     [alert addButtonWithTitle:@"OK"];
@@ -330,7 +330,7 @@ static NSString *findPythonExecutable(NSString *appDir) {
 // JavaScript confirm(...) in nativem NSAlert mit OK/Abbrechen bestaetigen
 - (void)webView:(WKWebView *)webView runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(BOOL result))completionHandler {
     NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = @"PDF Tool ForAll";
+    alert.messageText = @"Toolbox";
     alert.informativeText = message ?: @"";
     alert.alertStyle = NSAlertStyleInformational;
     [alert addButtonWithTitle:@"OK"];
@@ -383,17 +383,17 @@ static NSString *findPythonExecutable(NSString *appDir) {
     // 1. App Menu
     NSMenuItem *appMenuItem = [[NSMenuItem alloc] init];
     [mainMenu addItem:appMenuItem];
-    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"PDF Tool ForAll"];
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Toolbox"];
     [appMenuItem setSubmenu:appMenu];
     
-    [appMenu addItemWithTitle:@"Über PDF Tool ForAll" action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+    [appMenu addItemWithTitle:@"Über Toolbox" action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
     [appMenu addItem:[NSMenuItem separatorItem]];
-    [appMenu addItemWithTitle:@"PDF Tool ForAll ausblenden" action:@selector(hide:) keyEquivalent:@"h"];
+    [appMenu addItemWithTitle:@"Toolbox ausblenden" action:@selector(hide:) keyEquivalent:@"h"];
     NSMenuItem *hideOthers = [appMenu addItemWithTitle:@"Andere ausblenden" action:@selector(hideOtherApplications:) keyEquivalent:@"h"];
     [hideOthers setKeyEquivalentModifierMask:NSEventModifierFlagOption | NSEventModifierFlagCommand];
     [appMenu addItemWithTitle:@"Alle einblenden" action:@selector(unhideAllApplications:) keyEquivalent:@""];
     [appMenu addItem:[NSMenuItem separatorItem]];
-    [appMenu addItemWithTitle:@"PDF Tool ForAll beenden" action:@selector(terminate:) keyEquivalent:@"q"];
+    [appMenu addItemWithTitle:@"Toolbox beenden" action:@selector(terminate:) keyEquivalent:@"q"];
     
     // 2. Ablage (File) Menu
     NSMenuItem *fileMenuItem = [[NSMenuItem alloc] init];

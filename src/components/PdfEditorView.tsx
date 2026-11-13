@@ -18,6 +18,7 @@ import {
   Image as ImageIcon,
   Sparkles,
   AtSign,
+  EyeOff,
   Undo2,
   Redo2,
   Highlighter,
@@ -102,6 +103,7 @@ interface PdfEditorViewProps {
   onOpenMergeTab?: () => void;
   onOpenToolsTab?: () => void;
   onOpenMailSignatures?: () => void;
+  onOpenImages?: () => void;
   isActive?: boolean;
   onGoHome?: () => void;
   isHomeView?: boolean;
@@ -124,6 +126,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   onOpenMergeTab,
   onOpenToolsTab,
   onOpenMailSignatures,
+  onOpenImages,
   isActive = true,
   onGoHome,
   isHomeView = false,
@@ -1602,7 +1605,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
             </div>
           )}
 
-          <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
+          <div className="w-full max-w-5xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {/* Card 1: Open existing PDF or .pdftool Project */}
             <div
               onDragOver={handleDragOver}
@@ -1691,6 +1694,20 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                 Zu den Werkzeugen
               </button>
             </div>
+
+            {onOpenImages && (
+              <button
+                type="button"
+                onClick={onOpenImages}
+                className="p-6 bg-white rounded-3xl border-2 border-dashed border-[#D2D2D7] hover:border-rose-500 transition-all flex flex-col items-center text-center shadow-lg group cursor-pointer"
+              >
+                <span className="w-14 h-14 rounded-2xl bg-rose-500/10 text-rose-600 grid place-items-center mb-4 group-hover:scale-105 transition">
+                  <EyeOff size={28} aria-hidden="true" />
+                </span>
+                <span className="text-base font-bold text-[#1D1D1F] mb-2">Bilder unkenntlich machen</span>
+                <span className="text-xs text-[#86868B]">Gesichter, Kennzeichen oder Daten auf Fotos verpixeln, weichzeichnen oder schwärzen – und als Kopie speichern.</span>
+              </button>
+            )}
 
             {onOpenMailSignatures && (
               <button

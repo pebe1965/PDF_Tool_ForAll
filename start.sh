@@ -6,7 +6,7 @@ if ! command -v node &> /dev/null; then
   export PATH="$(pwd)/.tools/bin:$PATH"
 fi
 
-echo "🚀 Starte PDF Tool ForAll..."
+echo "🚀 Starte Toolbox – PDF, Bilder & mehr..."
 echo "📱 Für iPad: Öffne einfach die angezeigte 'Network' URL in Safari auf deinem iPad (im selben WLAN)!"
 echo ""
 

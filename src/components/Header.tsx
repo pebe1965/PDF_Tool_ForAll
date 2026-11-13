@@ -1,9 +1,9 @@
 import React from 'react';
-import { Home, FileEdit, FileStack, ShieldCheck, Sparkles, Settings, Wrench, Mail } from 'lucide-react';
+import { Home, FileEdit, FileStack, ShieldCheck, Sparkles, Settings, Wrench, Mail, Image as ImageIcon } from 'lucide-react';
 import { APP_VERSION } from '../config';
 import { UpdateNotification } from './UpdateNotification';
 
-export type AppTab = 'home' | 'editor' | 'merge' | 'tools' | 'mail-signatures';
+export type AppTab = 'home' | 'editor' | 'merge' | 'tools' | 'images' | 'mail-signatures';
 
 interface HeaderProps {
   activeTab: AppTab;
@@ -34,10 +34,10 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 sm:gap-2">
             <h1 className="font-bold text-base sm:text-lg text-[#1D1D1F] tracking-tight whitespace-nowrap group-hover:text-[#0071E3] transition">
-              PDF Tool ForAll
+              Toolbox
             </h1>
-            <span className="hidden xl:inline-block text-[10px] font-semibold bg-blue-100 text-[#0071E3] px-2 py-0.5 rounded-full uppercase tracking-wider whitespace-nowrap">
-              Business Suite
+            <span className="hidden 2xl:inline-block text-[11px] font-semibold bg-blue-100 text-[#0071E3] px-2 py-0.5 rounded-full whitespace-nowrap">
+              PDF, Bilder &amp; mehr
             </span>
           </div>
           <p className="text-xs text-[#86868B] hidden 2xl:block truncate">
@@ -72,7 +72,7 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <FileEdit size={16} className="flex-shrink-0" />
           <span className="flex items-center gap-1.5">
-            <span>Bearbeiten<span className="hidden lg:inline"> & Signieren</span></span>
+            <span>Bearbeiten<span className="hidden 2xl:inline"> & Signieren</span></span>
             {hasActiveDocument && (
               <span
                 className="w-2 h-2 rounded-full bg-[#0071E3] inline-block animate-pulse"
@@ -92,7 +92,7 @@ export const Header: React.FC<HeaderProps> = ({
           title="Zusammenführen & Sortieren"
         >
           <FileStack size={16} className="flex-shrink-0" />
-          <span>Zusammenführen<span className="hidden lg:inline"> & Sortieren</span></span>
+          <span>Zusammenführen<span className="hidden 2xl:inline"> & Sortieren</span></span>
         </button>
 
         <button
@@ -105,7 +105,17 @@ export const Header: React.FC<HeaderProps> = ({
           title="Werkzeuge & Business"
         >
           <Wrench size={16} className="flex-shrink-0" />
-          <span>Werkzeuge<span className="hidden lg:inline"> & Business</span></span>
+          <span>Werkzeuge<span className="hidden 2xl:inline"> & Business</span></span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onTabChange('images')}
+          aria-current={activeTab === 'images' ? 'page' : undefined}
+          title="Bilder bearbeiten & unkenntlich machen"
+          className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition cursor-pointer ${activeTab === 'images' ? 'bg-white text-[#0071E3] shadow-sm' : 'text-[#86868B] hover:text-[#1D1D1F]'}`}
+        >
+          <ImageIcon size={16} className="flex-shrink-0" />
+          <span>Bilder</span>
         </button>
         <button
           type="button"
