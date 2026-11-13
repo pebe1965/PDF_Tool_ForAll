@@ -51,6 +51,7 @@ import {
 } from 'lucide-react';
 import { pdfjsLib } from '../lib/pdfWorker';
 import { AnnotationLayer } from './AnnotationLayer';
+import { getLastPdfRedactionMethod, PDF_REDACTION_DEFAULT_STRENGTH } from '../lib/imageEngine';
 import { SignatureModal } from './SignatureModal';
 import { StampModal } from './StampModal';
 import { FormFillerModal } from './FormFillerModal';
@@ -238,6 +239,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
   // Canvas refs
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [pageRenderVersion, setPageRenderVersion] = useState(0);
   const pageContainerRef = useRef<HTMLDivElement | null>(null);
   const [canvasDimensions, setCanvasDimensions] = useState<{ width: number; height: number }>({
     width: 0,
@@ -705,6 +707,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
       await page.render(renderContext as any).promise;
       ctx.restore();
+      // Live-Vorschau von Verpixeln/Weichzeichnen braucht die fertig gerenderte Seite
+      setPageRenderVersion((v) => v + 1);
     } catch (err) {
       console.error('Render error:', err);
     }
@@ -780,6 +784,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         width: 0.25,
         height: 0.032,
         label: 'DSGVO',
+        method: getLastPdfRedactionMethod(),
+        strength: PDF_REDACTION_DEFAULT_STRENGTH,
       };
       pushAnnotationsChange((prev) => [...prev, newRed]);
       setSelectedAnnId(newRed.id);
@@ -2004,7 +2010,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                     ? 'bg-red-600 text-white shadow-sm'
                     : 'bg-[#F5F5F7] text-[#1D1D1F] hover:bg-red-50 hover:text-red-700'
                 }`}
-                title="DSGVO-Schwärzung: Sensible Daten unwiderruflich schwärzen"
+                title="Schwärzen & unkenntlich machen: Balken, Verpixeln, Weichzeichnen oder Milchglas – wird beim Speichern unwiderruflich eingebrannt"
               >
                 <ShieldAlert size={14} />
                 <span>Schwärzen</span>
@@ -2254,7 +2260,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                 {activeTool === 'add-highlight' &&
                   'Klicke auf die Stelle im PDF, die du mit dem Textmarker hervorheben möchtest.'}
                 {activeTool === 'add-redaction' &&
-                  'Klicke auf den sensiblen Bereich, um eine echte DSGVO-Schwärzung zu platzieren (wird beim Speichern unlesbar eingebrannt).'}
+                  'Klicke auf den sensiblen Bereich. Danach kannst du die Methode wählen (Balken, Verpixeln, Weichzeichnen, Milchglas) – beim Speichern wird alles unlesbar eingebrannt.'}
                 {activeTool === 'draw-freehand' &&
                   'Halte die Maustaste (oder den Apple Pencil) gedrückt, um frei auf der Seite zu zeichnen.'}
               </span>
@@ -2474,6 +2480,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                       onEditTextArt={handleEditTextArt}
                       selectedAnnotationId={selectedAnnId}
                       onSelectAnnotation={setSelectedAnnId}
+                      pageCanvas={canvasRef.current}
+                      pageRenderVersion={pageRenderVersion}
                     />
                   )}
                 </div>

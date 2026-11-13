@@ -1,7 +1,7 @@
 {
   "slug": "pdf-tool-forall",
   "github_repo": "pebe1965/PDF_Tool_ForAll",
-  "description": "Lokale Toolbox für PDFs, Bilder und mehr: PDFs bearbeiten, unterschreiben, schwärzen, zusammenführen und komprimieren, Bilder verpixeln, weichzeichnen oder schwärzen und ohne versteckte Fotodaten speichern – ohne Upload in eine Cloud. Dazu E-Mail-Signaturen für die gängigen Mailprogramme. Läuft auch auf dem iPad im selben WLAN.",
+  "description": "Lokale Toolbox für PDFs, Bilder und mehr: PDFs bearbeiten, unterschreiben, schwärzen oder verpixeln, zusammenführen und komprimieren, Bilder verpixeln, weichzeichnen oder schwärzen und ohne versteckte Fotodaten speichern – ohne Upload in eine Cloud. Dazu E-Mail-Signaturen für die gängigen Mailprogramme. Läuft auch auf dem iPad im selben WLAN.",
   "integrations": [
     {
       "module": "Bearbeiten & Signieren",
@@ -9,11 +9,11 @@
     },
     {
       "module": "Bilder unkenntlich machen",
-      "description": "Gesichter, Kennzeichen und Daten auf Fotos und Bildschirmfotos verpixeln, weichzeichnen, mit Milchglas oder Farbbalken abdecken, zuschneiden, drehen und ohne GPS- und Kameradaten als Kopie speichern."
+      "description": "Gesichter, Kennzeichen und Daten auf Fotos verpixeln, weichzeichnen, mit Milchglas oder Farbbalken abdecken, Bereiche passend drehen, zuschneiden und ohne GPS- und Kameradaten als Kopie speichern."
     },
     {
       "module": "Hintergrund, Stempel & Formen",
-      "description": "Seitenhintergrund anpassen, randlose Hintergrund-Balken über 100 % Breite, flexible Rahmenstärken und Füllungen, Ebenen-Steuerung, Stempel, DSGVO-Schwärzung und Formulare."
+      "description": "Seitenhintergrund anpassen, randlose Hintergrund-Balken, flexible Rahmen und Füllungen, Ebenen-Steuerung, Stempel, Formulare und DSGVO-Schwärzung als Balken, Verpixeln, Weichzeichnen oder Milchglas."
     },
     {
       "module": "Zusammenführen & Ordnen",

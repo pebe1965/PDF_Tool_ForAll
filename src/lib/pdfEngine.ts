@@ -1,3 +1,4 @@
+import { applyRegionToCanvas, pdfRedactionRegion } from './imageEngine';
 import {
   PDFDocument,
   PDFName,
@@ -305,14 +306,10 @@ export async function applyAnnotationsToPdf(
 
         await pdfJsPage.render({ canvasContext: ctx, viewport }).promise;
 
-        // Burn solid black rectangles directly over the pixels
-        ctx.fillStyle = '#000000';
+        // Balken, Verpixelung, Weichzeichner oder Milchglas direkt in die Pixel einbrennen.
+        // Die Seite wird danach als Bild eingesetzt – der Text darunter ist nicht mehr im PDF.
         for (const red of redactions) {
-          const rx = red.x * canvas.width;
-          const ry = red.y * canvas.height;
-          const rw = red.width * canvas.width;
-          const rh = red.height * canvas.height;
-          ctx.fillRect(rx, ry, rw, rh);
+          applyRegionToCanvas(canvas, pdfRedactionRegion(red, canvas.width, canvas.height));
         }
 
         const jpgDataUrl = canvas.toDataURL('image/jpeg', 0.92);

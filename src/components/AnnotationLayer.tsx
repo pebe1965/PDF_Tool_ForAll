@@ -25,6 +25,9 @@ import {
   ArrowUp,
   ArrowDown,
   Maximize2,
+  EyeOff,
+  Grid3x3,
+  Droplets,
 } from 'lucide-react';
 import {
   TextAnnotation,
@@ -40,6 +43,54 @@ import {
 import { classifyLine } from '../lib/a4Pagination';
 import { formatMarkdownToCleanText } from '../lib/geminiService';
 import { buildTextArtSvgMarkup, getFontFamilyCss } from '../lib/textArtHelper';
+import {
+  METHOD_LABELS,
+  PDF_REDACTION_DEFAULT_STRENGTH,
+  RedactMethod,
+  buildRegionPatch,
+  isMethodSecure,
+  pdfRedactionRegion,
+  setLastPdfRedactionMethod,
+} from '../lib/imageEngine';
+
+/**
+ * Live-Vorschau einer Schwärzung mit Verpixeln/Weichzeichnen/Milchglas:
+ * nimmt die gerenderte PDF-Seite und berechnet den Effekt nur für diesen Ausschnitt.
+ */
+const RedactionPreview: React.FC<{
+  red: RedactionAnnotation;
+  pageWidth: number;
+  pageCanvas: HTMLCanvasElement | null;
+  pageRenderVersion: number;
+}> = ({ red, pageWidth, pageCanvas, pageRenderVersion }) => {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const out = ref.current;
+    if (!out || !pageCanvas || pageCanvas.width === 0) return;
+    const region = pdfRedactionRegion(red, pageCanvas.width, pageCanvas.height);
+    const w = Math.max(1, Math.round(region.w));
+    const h = Math.max(1, Math.round(region.h));
+    out.width = w;
+    out.height = h;
+    const ctx = out.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, w, h);
+    try {
+      const patch = buildRegionPatch(pageCanvas, region);
+      if (patch) ctx.drawImage(patch.canvas, patch.x - region.x, patch.y - region.y);
+    } catch {
+      /* Vorschau ist nur Hilfe – Export rechnet neu */
+    }
+  }, [red.x, red.y, red.width, red.height, red.method, red.strength, pageWidth, pageCanvas, pageRenderVersion]);
+  return <canvas ref={ref} className="absolute inset-0 w-full h-full pointer-events-none" />;
+};
+
+const REDACTION_METHOD_ICONS: Record<RedactMethod, React.ReactNode> = {
+  fill: <EyeOff size={12} />,
+  pixelate: <Grid3x3 size={12} />,
+  blur: <Droplets size={12} />,
+  frosted: <Droplets size={12} className="opacity-60" />,
+};
 
 interface AnnotationLayerProps {
   pageNumber: number;
@@ -54,6 +105,9 @@ interface AnnotationLayerProps {
   onEditTextArt?: (art: TextArtAnnotation) => void;
   selectedAnnotationId: string | null;
   onSelectAnnotation: (id: string | null) => void;
+  /** Gerenderte PDF-Seite für die Vorschau von Verpixeln/Weichzeichnen */
+  pageCanvas?: HTMLCanvasElement | null;
+  pageRenderVersion?: number;
 }
 
 const stripLinePrefix = (line: string): string => {
@@ -1251,6 +1305,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   onEditTextArt,
   selectedAnnotationId,
   onSelectAnnotation,
+  pageCanvas = null,
+  pageRenderVersion = 0,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -1670,6 +1726,14 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
           const topPx = red.y * pageHeight;
           const widthPx = red.width * pageWidth;
           const heightPx = red.height * pageHeight;
+          const method: RedactMethod = red.method || 'fill';
+          const strength = red.strength ?? PDF_REDACTION_DEFAULT_STRENGTH;
+          const fillColor = red.color || '#000000';
+          const secure = isMethodSecure(method, strength);
+          const setMethod = (m: RedactMethod) => {
+            setLastPdfRedactionMethod(m);
+            onUpdateAnnotation({ ...red, method: m });
+          };
 
           return (
             <div
@@ -1680,31 +1744,76 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                 top: `${topPx}px`,
                 width: `${widthPx}px`,
                 height: `${heightPx}px`,
+                backgroundColor: method === 'fill' ? fillColor : undefined,
               }}
               onClick={(e) => {
                 e.stopPropagation();
                 onSelectAnnotation(red.id);
               }}
               onPointerDown={(e) => handlePointerDownDrag(e, red)}
-              className={`pointer-events-auto cursor-move bg-black flex items-center justify-center ${
+              className={`pointer-events-auto cursor-move flex items-center justify-center ${
                 isSelected
                   ? 'ring-2 ring-red-500 ring-offset-1 z-20'
                   : 'border border-red-500/60 hover:ring-1 hover:ring-red-400 z-10'
               }`}
-              title="DSGVO-Schwärzung: Darunterliegender Text wird beim Export unwiderruflich entfernt"
+              title={`${METHOD_LABELS[method]}: Darunterliegender Inhalt wird beim Speichern unwiderruflich entfernt`}
             >
-              <span className="text-[9px] font-mono font-bold text-red-400/80 uppercase tracking-wider truncate px-1 pointer-events-none">
-                {heightPx > 14 && widthPx > 55 ? 'DSGVO-SCHWÄRZUNG' : ''}
-              </span>
+              {method !== 'fill' && (
+                <RedactionPreview red={red} pageWidth={pageWidth} pageCanvas={pageCanvas} pageRenderVersion={pageRenderVersion} />
+              )}
+              {method === 'fill' && fillColor.toLowerCase() === '#000000' && (
+                <span className="text-[9px] font-mono font-bold text-red-400/80 uppercase tracking-wider truncate px-1 pointer-events-none">
+                  {heightPx > 14 && widthPx > 55 ? 'DSGVO-SCHWÄRZUNG' : ''}
+                </span>
+              )}
 
               {isSelected && (
                 <>
                   <div
-                    className="absolute -top-10 left-0 flex items-center gap-1.5 bg-[#1D1D1F] text-white px-2.5 py-1 rounded-xl shadow-xl text-[11px] z-30 whitespace-nowrap"
+                    className="absolute -top-10 left-0 flex items-center gap-1 bg-[#1D1D1F] text-white px-2 py-1 rounded-xl shadow-xl text-[11px] z-30 whitespace-nowrap"
                     onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    <ShieldAlert size={12} className="text-red-400" />
-                    <span className="font-semibold text-red-200">Echte DSGVO-Schwärzung</span>
+                    <ShieldAlert size={12} className={secure ? 'text-emerald-400' : 'text-amber-400'} />
+                    {(['fill', 'pixelate', 'blur', 'frosted'] as RedactMethod[]).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMethod(m)}
+                        aria-pressed={method === m}
+                        className={`flex items-center gap-1 px-1.5 py-1 rounded-lg ${method === m ? 'bg-white text-[#1D1D1F] font-semibold' : 'hover:bg-white/20'}`}
+                        title={METHOD_LABELS[m]}
+                      >
+                        {REDACTION_METHOD_ICONS[m]}
+                        {method === m && <span>{METHOD_LABELS[m]}</span>}
+                      </button>
+                    ))}
+                    <div className="w-[1px] h-3.5 bg-white/20 mx-0.5" />
+                    {method === 'fill' ? (
+                      ['#000000', '#FFFFFF', '#6B7280'].map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          title={c === '#000000' ? 'Schwarz' : c === '#FFFFFF' ? 'Weiß (unsichtbar abdecken)' : 'Grau'}
+                          onClick={() => onUpdateAnnotation({ ...red, color: c })}
+                          className={`w-4 h-4 rounded-full border ${fillColor.toLowerCase() === c.toLowerCase() ? 'border-white ring-2 ring-[#0071E3]' : 'border-white/50'}`}
+                          style={{ backgroundColor: c }}
+                        />
+                      ))
+                    ) : (
+                      <label className="flex items-center gap-1" title={secure ? 'Stärke – sicher' : 'Stärke – zu schwach für Text, bitte erhöhen'}>
+                        <span className="text-white/70">Stärke</span>
+                        <input
+                          type="range"
+                          min={1}
+                          max={100}
+                          value={strength}
+                          onChange={(e) => onUpdateAnnotation({ ...red, strength: Number(e.target.value) })}
+                          className="w-20 accent-[#0071E3]"
+                        />
+                        {!secure && <span className="text-amber-300 font-semibold">schwach</span>}
+                      </label>
+                    )}
                     <div className="w-[1px] h-3.5 bg-white/20 mx-0.5" />
                     {onDuplicateAnnotation && (
                       <button

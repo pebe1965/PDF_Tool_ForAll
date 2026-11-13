@@ -19,6 +19,7 @@ import {
   Redo2,
   RotateCcw,
   RotateCw,
+  RotateCcwSquare,
   Scaling,
   ShieldAlert,
   ShieldCheck,
@@ -52,6 +53,11 @@ import {
   moveRegion,
   newRegionId,
   normRect,
+  normalizeAngle,
+  regionCenter,
+  regionContains,
+  regionCorners,
+  rotatePoint,
   renderImage,
   resizeImage,
   rotateImage,
@@ -82,6 +88,7 @@ type DragState =
   | { kind: 'brush'; points: Point[] }
   | { kind: 'move'; id: string; start: Point; orig: ImageRegion; moved: boolean }
   | { kind: 'resize'; id: string; anchor: Point; orig: ImageRegion }
+  | { kind: 'rotate'; id: string; center: Point; orig: ImageRegion }
   | { kind: 'crop'; start: Point; current: Point };
 
 interface ImageEditorViewProps {
@@ -322,21 +329,31 @@ export const ImageEditorView: React.FC<ImageEditorViewProps> = ({ isActive, onGo
   const hitRegion = (p: Point): ImageRegion | null => {
     for (let i = regions.length - 1; i >= 0; i--) {
       const r = regions[i];
-      if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) return r;
+      if (regionContains(r, p)) return r;
     }
     return null;
   };
 
-  const hitHandle = (p: Point): { corner: Point; anchor: Point } | null => {
+  const rotateHandleDistance = 26 / displayScale;
+
+  /** Lokale y-Position des Drehgriffs: über dem Bereich, am oberen Bildrand darunter. */
+  const rotateHandleLocalY = (r: ImageRegion): number => {
+    const above = rotatePoint({ x: r.x + r.w / 2, y: r.y - rotateHandleDistance }, regionCenter(r), r.rotation || 0);
+    const inside = above.x >= 0 && above.x <= imgW && above.y >= 0 && above.y <= imgH;
+    return inside ? r.y - rotateHandleDistance : r.y + r.h + rotateHandleDistance;
+  };
+
+  const rotateHandlePos = (r: ImageRegion): Point =>
+    rotatePoint({ x: r.x + r.w / 2, y: rotateHandleLocalY(r) }, regionCenter(r), r.rotation || 0);
+
+  const hitHandle = (p: Point): { kind: 'corner'; anchor: Point } | { kind: 'rotate' } | null => {
     if (!selected || selected.shape === 'brush') return null;
-    const corners = [
-      { c: { x: selected.x, y: selected.y }, a: { x: selected.x + selected.w, y: selected.y + selected.h } },
-      { c: { x: selected.x + selected.w, y: selected.y }, a: { x: selected.x, y: selected.y + selected.h } },
-      { c: { x: selected.x, y: selected.y + selected.h }, a: { x: selected.x + selected.w, y: selected.y } },
-      { c: { x: selected.x + selected.w, y: selected.y + selected.h }, a: { x: selected.x, y: selected.y } },
-    ];
-    for (const k of corners) {
-      if (Math.abs(p.x - k.c.x) <= handleSize && Math.abs(p.y - k.c.y) <= handleSize) return { corner: k.c, anchor: k.a };
+    const rh = rotateHandlePos(selected);
+    if (Math.hypot(p.x - rh.x, p.y - rh.y) <= handleSize) return { kind: 'rotate' };
+    const corners = regionCorners(selected);
+    for (let i = 0; i < 4; i++) {
+      const c = corners[i];
+      if (Math.abs(p.x - c.x) <= handleSize && Math.abs(p.y - c.y) <= handleSize) return { kind: 'corner', anchor: corners[(i + 2) % 4] };
     }
     return null;
   };
@@ -358,7 +375,8 @@ export const ImageEditorView: React.FC<ImageEditorViewProps> = ({ isActive, onGo
     }
     const handle = hitHandle(p);
     if (handle && selected) {
-      setDrag({ kind: 'resize', id: selected.id, anchor: handle.anchor, orig: selected });
+      if (handle.kind === 'rotate') setDrag({ kind: 'rotate', id: selected.id, center: regionCenter(selected), orig: selected });
+      else setDrag({ kind: 'resize', id: selected.id, anchor: handle.anchor, orig: selected });
       return;
     }
     const hit = tool === 'select' ? hitRegion(p) : selected && hitRegion(p)?.id === selected.id ? selected : null;
@@ -390,9 +408,27 @@ export const ImageEditorView: React.FC<ImageEditorViewProps> = ({ isActive, onGo
       setLiveRegions(doc.regions.map((r) => (r.id === drag.id ? moved : r)));
       if (!drag.moved) setDrag({ ...drag, moved: true });
     } else if (drag.kind === 'resize') {
-      const nr = normRect(drag.anchor.x, drag.anchor.y, p.x, p.y);
-      const resized = { ...drag.orig, ...nr };
+      // Größe im gedrehten Koordinatensystem des Bereichs ändern; die gegenüberliegende Ecke bleibt fest
+      const deg = drag.orig.rotation || 0;
+      const d = rotatePoint({ x: p.x - drag.anchor.x, y: p.y - drag.anchor.y }, { x: 0, y: 0 }, -deg);
+      const w = Math.max(1, Math.abs(d.x));
+      const h = Math.max(1, Math.abs(d.y));
+      const cx = (drag.anchor.x + p.x) / 2;
+      const cy = (drag.anchor.y + p.y) / 2;
+      const resized = { ...drag.orig, x: cx - w / 2, y: cy - h / 2, w, h };
       setLiveRegions(doc.regions.map((r) => (r.id === drag.id ? resized : r)));
+    } else if (drag.kind === 'rotate') {
+      // Griff oben: 0° zeigt nach oben; Griff unten: 0° zeigt nach unten
+      const handleBelow = rotateHandleLocalY(drag.orig) > drag.orig.y + drag.orig.h;
+      let angle = (Math.atan2(p.y - drag.center.y, p.x - drag.center.x) * 180) / Math.PI + (handleBelow ? -90 : 90);
+      // Mit Umschalttaste in 15°-Schritten, sonst nahe 0/90/180° einrasten
+      if (e.shiftKey) angle = Math.round(angle / 15) * 15;
+      else {
+        const nearest = Math.round(angle / 90) * 90;
+        if (Math.abs(angle - nearest) < 2.5) angle = nearest;
+      }
+      const rotated = { ...drag.orig, rotation: normalizeAngle(angle) };
+      setLiveRegions(doc.regions.map((r) => (r.id === drag.id ? rotated : r)));
     }
   };
 
@@ -429,7 +465,7 @@ export const ImageEditorView: React.FC<ImageEditorViewProps> = ({ isActive, onGo
     } else if (drag.kind === 'crop') {
       const nr = normRect(drag.start.x, drag.start.y, drag.current.x, drag.current.y);
       setCropRect(nr.w >= minSize * 2 && nr.h >= minSize * 2 ? nr : null);
-    } else if ((drag.kind === 'move' && drag.moved) || drag.kind === 'resize') {
+    } else if ((drag.kind === 'move' && drag.moved) || drag.kind === 'resize' || drag.kind === 'rotate') {
       if (liveRegions) commit({ ...doc, regions: liveRegions });
     }
     setDrag(null);
@@ -829,10 +865,13 @@ export const ImageEditorView: React.FC<ImageEditorViewProps> = ({ isActive, onGo
                       strokeDasharray: isSel ? undefined : '5 4',
                       vectorEffect: 'non-scaling-stroke' as const,
                     };
+                    const rot = r.shape === 'brush' ? 0 : r.rotation || 0;
+                    const cx = r.x + r.w / 2;
+                    const cy = r.y + r.h / 2;
                     return (
-                      <g key={r.id}>
+                      <g key={r.id} transform={rot ? `rotate(${rot} ${cx} ${cy})` : undefined}>
                         {r.shape === 'ellipse' ? (
-                          <ellipse cx={r.x + r.w / 2} cy={r.y + r.h / 2} rx={r.w / 2} ry={r.h / 2} {...common} />
+                          <ellipse cx={cx} cy={cy} rx={r.w / 2} ry={r.h / 2} {...common} />
                         ) : r.shape === 'brush' ? (
                           <rect x={r.x} y={r.y} width={r.w} height={r.h} {...common} strokeDasharray="2 4" />
                         ) : (
@@ -841,25 +880,32 @@ export const ImageEditorView: React.FC<ImageEditorViewProps> = ({ isActive, onGo
                         {!isSel && (
                           <rect x={r.x} y={r.y} width={r.w} height={r.h} fill="none" stroke="rgba(0,0,0,0.35)" strokeWidth={1} vectorEffect="non-scaling-stroke" strokeDasharray="5 4" strokeDashoffset={5} />
                         )}
-                        {isSel && r.shape !== 'brush' &&
-                          [
-                            [r.x, r.y],
-                            [r.x + r.w, r.y],
-                            [r.x, r.y + r.h],
-                            [r.x + r.w, r.y + r.h],
-                          ].map(([hx, hy], i) => (
-                            <rect
-                              key={i}
-                              x={hx - handleSize / 2}
-                              y={hy - handleSize / 2}
-                              width={handleSize}
-                              height={handleSize}
-                              fill="#fff"
-                              stroke="#0071E3"
-                              strokeWidth={1.5}
-                              vectorEffect="non-scaling-stroke"
-                            />
-                          ))}
+                        {isSel && r.shape !== 'brush' && (
+                          <>
+                            <line x1={cx} y1={rotateHandleLocalY(r) < r.y ? r.y : r.y + r.h} x2={cx} y2={rotateHandleLocalY(r)} stroke="#0071E3" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+                            <circle cx={cx} cy={rotateHandleLocalY(r)} r={handleSize * 0.6} fill="#0071E3" stroke="#fff" strokeWidth={1.5} vectorEffect="non-scaling-stroke" style={{ cursor: 'grab' }}>
+                              <title>Ziehen zum Drehen (Umschalttaste: 15°-Schritte)</title>
+                            </circle>
+                            {[
+                              [r.x, r.y],
+                              [r.x + r.w, r.y],
+                              [r.x, r.y + r.h],
+                              [r.x + r.w, r.y + r.h],
+                            ].map(([hx, hy], i) => (
+                              <rect
+                                key={i}
+                                x={hx - handleSize / 2}
+                                y={hy - handleSize / 2}
+                                width={handleSize}
+                                height={handleSize}
+                                fill="#fff"
+                                stroke="#0071E3"
+                                strokeWidth={1.5}
+                                vectorEffect="non-scaling-stroke"
+                              />
+                            ))}
+                          </>
+                        )}
                       </g>
                     );
                   })}
@@ -1033,6 +1079,43 @@ export const ImageEditorView: React.FC<ImageEditorViewProps> = ({ isActive, onGo
                   onChange={(e) => setBrushSize(Number(e.target.value))}
                   className="w-full accent-[#0071E3]"
                 />
+              </div>
+            )}
+
+            {selected && selected.shape !== 'brush' && (
+              <div className="mt-3">
+                <label className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                  <span>Drehung</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="font-mono">{Math.round(selected.rotation || 0)}°</span>
+                    {!!selected.rotation && (
+                      <button type="button" title="Drehung zurücksetzen" onClick={() => updateSelected({ rotation: 0 })} className="p-0.5 rounded hover:bg-gray-100">
+                        <RotateCcwSquare size={13} />
+                      </button>
+                    )}
+                  </span>
+                </label>
+                <input
+                  type="range"
+                  min={-180}
+                  max={180}
+                  step={1}
+                  value={Math.round(selected.rotation || 0)}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (doc) setLiveRegions(doc.regions.map((r) => (r.id === selected.id ? { ...r, rotation: v } : r)));
+                  }}
+                  onPointerUp={(e) => {
+                    setLiveRegions(null);
+                    updateSelected({ rotation: Number((e.target as HTMLInputElement).value) });
+                  }}
+                  onKeyUp={(e) => {
+                    setLiveRegions(null);
+                    updateSelected({ rotation: Number((e.target as HTMLInputElement).value) });
+                  }}
+                  className="w-full accent-[#0071E3]"
+                />
+                <p className="text-[10px] text-gray-400 mt-0.5">Oder am runden Griff über dem Bereich ziehen.</p>
               </div>
             )}
 

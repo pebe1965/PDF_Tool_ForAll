@@ -60,6 +60,12 @@ export interface RedactionAnnotation {
   width: number; // normalized 0..1
   height: number; // normalized 0..1
   label?: string; // optional label like 'DSGVO' or 'Geschwärzt'
+  /** Art des Unkenntlichmachens; fehlt = schwarzer Balken (ältere Projekte) */
+  method?: 'fill' | 'pixelate' | 'blur' | 'frosted';
+  /** 1–100, für pixelate/blur/frosted */
+  strength?: number;
+  /** Farbe für method 'fill' */
+  color?: string;
 }
 
 export interface ShapeAnnotation {

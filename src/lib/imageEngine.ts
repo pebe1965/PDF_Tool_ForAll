@@ -34,6 +34,60 @@ export interface ImageRegion {
   color: string;
   /** Effekt auf alles AUSSERHALB der Form anwenden */
   inverted?: boolean;
+  /** Drehung in Grad um den Mittelpunkt (nur rect/ellipse); x/y/w/h sind der ungedrehte Rahmen */
+  rotation?: number;
+}
+
+/** Dreht einen Punkt um einen Mittelpunkt. */
+export function rotatePoint(p: Point, c: Point, deg: number): Point {
+  if (!deg) return p;
+  const a = (deg * Math.PI) / 180;
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  const dx = p.x - c.x;
+  const dy = p.y - c.y;
+  return { x: c.x + dx * cos - dy * sin, y: c.y + dx * sin + dy * cos };
+}
+
+export function regionCenter(r: ImageRegion): Point {
+  return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+}
+
+/** Die vier Ecken eines (evtl. gedrehten) Bereichs: oben links, oben rechts, unten rechts, unten links. */
+export function regionCorners(r: ImageRegion): Point[] {
+  const c = regionCenter(r);
+  const deg = r.shape === 'brush' ? 0 : r.rotation || 0;
+  return [
+    { x: r.x, y: r.y },
+    { x: r.x + r.w, y: r.y },
+    { x: r.x + r.w, y: r.y + r.h },
+    { x: r.x, y: r.y + r.h },
+  ].map((p) => rotatePoint(p, c, deg));
+}
+
+/** Achsenparalleler Rahmen um den (evtl. gedrehten) Bereich. */
+export function regionBounds(r: ImageRegion) {
+  if (r.shape === 'brush' || !r.rotation) return { x: r.x, y: r.y, w: r.w, h: r.h };
+  const pts = regionCorners(r);
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+/** Liegt der Punkt im (evtl. gedrehten) Bereich? */
+export function regionContains(r: ImageRegion, p: Point): boolean {
+  const local = r.shape === 'brush' ? p : rotatePoint(p, regionCenter(r), -(r.rotation || 0));
+  return local.x >= r.x && local.x <= r.x + r.w && local.y >= r.y && local.y <= r.y + r.h;
+}
+
+/** Winkel auf -180..180 bringen. */
+export function normalizeAngle(deg: number): number {
+  let a = deg % 360;
+  if (a > 180) a -= 360;
+  if (a <= -180) a += 360;
+  return Math.round(a * 10) / 10;
 }
 
 export const METHOD_LABELS: Record<RedactMethod, string> = {
@@ -249,6 +303,11 @@ function mapRegion(r: ImageRegion, map: PointMap): ImageRegion {
   return { ...r, ...normRect(a.x, a.y, b.x, b.y) };
 }
 
+/** Spiegeln kehrt die Drehrichtung um. */
+function mirrorRotation(r: ImageRegion): ImageRegion {
+  return r.rotation ? { ...r, rotation: normalizeAngle(-r.rotation) } : r;
+}
+
 /* ------------------------------------------------------------------ */
 /* Drehen, Spiegeln, Zuschneiden (erzeugen ein neues Grundbild)        */
 /* ------------------------------------------------------------------ */
@@ -299,7 +358,7 @@ export function flipImage(
   }
   ctx.drawImage(base, 0, 0);
   const map: PointMap = axis === 'horizontal' ? (p) => ({ x: W - p.x, y: p.y }) : (p) => ({ x: p.x, y: H - p.y });
-  return { base: out, regions: regions.map((r) => mapRegion(r, map)) };
+  return { base: out, regions: regions.map((r) => mirrorRotation(mapRegion(r, map))) };
 }
 
 export function cropImage(
@@ -315,7 +374,10 @@ export function cropImage(
   out.getContext('2d')!.drawImage(base, x, y, w, h, 0, 0, w, h);
   const moved = regions
     .map((r) => moveRegion(r, -x, -y))
-    .filter((r) => r.inverted || (r.x + r.w > 0 && r.y + r.h > 0 && r.x < w && r.y < h));
+    .filter((r) => {
+      const b = regionBounds(r);
+      return r.inverted || (b.x + b.w > 0 && b.y + b.h > 0 && b.x < w && b.y < h);
+    });
   return { base: out, regions: moved };
 }
 
@@ -384,16 +446,37 @@ function drawShapePath(ctx: CanvasRenderingContext2D, r: ImageRegion, ox: number
     ctx.stroke();
     return;
   }
+  ctx.save();
+  ctx.translate(r.x - ox + r.w / 2, r.y - oy + r.h / 2);
+  if (r.rotation) ctx.rotate((r.rotation * Math.PI) / 180);
   ctx.beginPath();
   if (r.shape === 'ellipse') {
-    ctx.ellipse(r.x - ox + r.w / 2, r.y - oy + r.h / 2, Math.max(0.5, r.w / 2), Math.max(0.5, r.h / 2), 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, Math.max(0.5, r.w / 2), Math.max(0.5, r.h / 2), 0, 0, Math.PI * 2);
   } else {
-    ctx.rect(r.x - ox, r.y - oy, r.w, r.h);
+    ctx.rect(-r.w / 2, -r.h / 2, r.w, r.h);
   }
   ctx.fill();
+  ctx.restore();
 }
 
 function applyRegion(target: HTMLCanvasElement, r: ImageRegion) {
+  const patch = buildRegionPatch(target, r);
+  if (patch) target.getContext('2d')!.drawImage(patch.canvas, patch.x, patch.y);
+}
+
+/** Wendet einen Bereich direkt auf eine Zeichenfläche an (z. B. eine gerasterte PDF-Seite). */
+export function applyRegionToCanvas(target: HTMLCanvasElement, r: ImageRegion) {
+  applyRegion(target, r);
+}
+
+/**
+ * Berechnet nur den veränderten Ausschnitt eines Bereichs (bereits maskiert).
+ * Wird für die Live-Vorschau im PDF-Editor genutzt.
+ */
+export function buildRegionPatch(
+  target: HTMLCanvasElement,
+  r: ImageRegion,
+): { canvas: HTMLCanvasElement; x: number; y: number } | null {
   const W = target.width;
   const H = target.height;
   // Betroffener Ausschnitt
@@ -407,18 +490,24 @@ function applyRegion(target: HTMLCanvasElement, r: ImageRegion) {
     bw = W;
     bh = H;
   } else {
-    bx = Math.max(0, Math.floor(r.x));
-    by = Math.max(0, Math.floor(r.y));
-    bw = Math.min(W, Math.ceil(r.x + r.w)) - bx;
-    bh = Math.min(H, Math.ceil(r.y + r.h)) - by;
+    const b = regionBounds(r);
+    bx = Math.max(0, Math.floor(b.x));
+    by = Math.max(0, Math.floor(b.y));
+    bw = Math.min(W, Math.ceil(b.x + b.w)) - bx;
+    bh = Math.min(H, Math.ceil(b.y + b.h)) - by;
   }
-  if (bw < 1 || bh < 1) return;
+  if (bw < 1 || bh < 1) return null;
 
   // Effekt-Ebene
   const effect = makeCanvas(bw, bh);
   const ectx = effect.getContext('2d')!;
   // Bezugsgröße für die Effektstärke: Bereichsgröße bzw. bei „umkehren“ ein Drittel des Bildes
-  const refSize = r.inverted ? Math.max(4, Math.min(W, H) / 3) : Math.max(4, Math.min(r.w, r.h));
+  // Lange, schmale Bereiche (Textzeilen, Nummernschilder): Buchstaben sind dort etwa halb so
+  // hoch wie der Bereich – ohne Verstärkung blieben die Kacheln kleiner als die Schrift.
+  const shortSide = Math.min(r.w, r.h);
+  const aspect = shortSide > 0 ? Math.max(r.w, r.h) / shortSide : 1;
+  const thinBoost = Math.min(2, Math.max(1, 1 + (aspect - 2) * 0.25));
+  const refSize = r.inverted ? Math.max(4, Math.min(W, H) / 3) : Math.max(4, shortSide * thinBoost);
   const s = Math.min(100, Math.max(1, r.strength)) / 100;
 
   if (r.method === 'fill') {
@@ -455,7 +544,7 @@ function applyRegion(target: HTMLCanvasElement, r: ImageRegion) {
   ectx.drawImage(mask, 0, 0);
   ectx.globalCompositeOperation = 'source-over';
 
-  target.getContext('2d')!.drawImage(effect, bx, by);
+  return { canvas: effect, x: bx, y: by };
 }
 
 function pixelateInto(
@@ -688,4 +777,49 @@ export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
   return `${(n / 1024 / 1024).toFixed(1).replace('.', ',')} MB`;
+}
+
+/* ------------------------------------------------------------------ */
+/* PDF-Schwärzung                                                      */
+/* ------------------------------------------------------------------ */
+
+export const PDF_REDACTION_DEFAULT_STRENGTH = 70;
+const PDF_METHOD_KEY = 'pdf_tool_redaction_method';
+
+/** Wandelt eine PDF-Schwärzung (Werte 0..1 der Seite) in einen Bildbereich in Pixeln um. */
+export function pdfRedactionRegion(
+  red: { id: string; x: number; y: number; width: number; height: number; method?: RedactMethod; strength?: number; color?: string },
+  pageW: number,
+  pageH: number,
+): ImageRegion {
+  return {
+    id: red.id,
+    shape: 'rect',
+    x: red.x * pageW,
+    y: red.y * pageH,
+    w: red.width * pageW,
+    h: red.height * pageH,
+    method: red.method || 'fill',
+    strength: red.strength ?? PDF_REDACTION_DEFAULT_STRENGTH,
+    color: red.color || '#000000',
+  };
+}
+
+/** Zuletzt im PDF-Editor gewählte Methode (für neue Schwärzungen). */
+export function getLastPdfRedactionMethod(): RedactMethod {
+  try {
+    const v = localStorage.getItem(PDF_METHOD_KEY);
+    if (v === 'fill' || v === 'pixelate' || v === 'blur' || v === 'frosted') return v;
+  } catch {
+    /* ohne Speicher: Standard */
+  }
+  return 'fill';
+}
+
+export function setLastPdfRedactionMethod(m: RedactMethod) {
+  try {
+    localStorage.setItem(PDF_METHOD_KEY, m);
+  } catch {
+    /* egal */
+  }
 }
