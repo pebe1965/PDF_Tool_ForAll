@@ -37,8 +37,36 @@ const clients = {
   classic: 'Klassisches Outlook für Windows',
   mac: 'Outlook für Mac',
   gmail: 'Gmail im Browser',
+  ionos: '1&1 / IONOS Webmail',
+  strato: 'Strato Webmail',
+  hetzner: 'Hetzner Webmail (Roundcube)',
+  dogado: 'Dogado Webmail',
   mobile: 'Apple Mail auf dem iPhone / Outlook Mobile',
 };
+
+const clientGroups = [
+  {
+    group: 'E-Mail-Programme & Apps',
+    items: [
+      { key: 'apple', label: 'Apple Mail auf dem Mac' },
+      { key: 'thunderbird', label: 'Thunderbird' },
+      { key: 'outlook', label: 'Neues Outlook / Outlook im Web' },
+      { key: 'classic', label: 'Klassisches Outlook für Windows' },
+      { key: 'mac', label: 'Outlook für Mac' },
+      { key: 'gmail', label: 'Gmail im Browser' },
+      { key: 'mobile', label: 'Apple Mail auf dem iPhone / Outlook Mobile' },
+    ],
+  },
+  {
+    group: 'Webmail & Domain-Hosting',
+    items: [
+      { key: 'ionos', label: '1&1 / IONOS Webmail' },
+      { key: 'strato', label: 'Strato Webmail' },
+      { key: 'hetzner', label: 'Hetzner Webmail (Roundcube)' },
+      { key: 'dogado', label: 'Dogado Webmail' },
+    ],
+  },
+] as const;
 
 const instructions: Record<keyof typeof clients, string> = {
   apple: 'Lade die .eml-Datei und öffne sie in Apple Mail. Klicke in den Nachrichteninhalt und drücke ⌘A und ⌘C. Öffne Mail → Einstellungen → Signaturen, deaktiviere dort für deine Signatur die Option für die Standardschrift und füge den Inhalt mit ⌘V ein.',
@@ -47,6 +75,10 @@ const instructions: Record<keyof typeof clients, string> = {
   classic: 'Öffne eine neue Nachricht und wähle Signatur → Signaturen. Füge die Vorlage ein. Falls nötig, kopiere sie über Word und setze das Logo über den Bildbutton ein.',
   mac: 'Öffne Outlook → Einstellungen → Signaturen und füge die Vorlage in eine neue Signatur ein.',
   gmail: 'Öffne Einstellungen → Alle Einstellungen aufrufen → Allgemein → Signatur. Füge die Vorlage ein und speichere die Änderungen.',
+  ionos: 'Melde dich im 1&1 / IONOS Webmail an (mail.ionos.de). Klicke oben rechts auf Einstellungen (Zahnrad) → E-Mail → Signaturen → „Signatur hinzufügen“. Klicke hier auf „Formatiert kopieren“ und füge die Signatur im Textfeld mit ⌘V (bzw. Strg+V) ein.',
+  strato: 'Melde dich im STRATO Webmail an (webmail.strato.de). Klicke oben rechts auf Einstellungen (Zahnrad) → E-Mail → Signaturen → „Signatur hinzufügen“. Klicke hier auf „Formatiert kopieren“ und füge die Signatur mit ⌘V (bzw. Strg+V) in das Eingabefeld ein.',
+  hetzner: 'Melde dich bei Hetzner Webmail an (webmail.your-server.de). Klicke links auf Einstellungen (Zahnrad) → Identitäten und wähle deine E-Mail-Adresse. Wichtig: Setze das Häkchen bei „HTML-Signatur“. Klicke hier auf „Formatiert kopieren“ und füge die Signatur mit ⌘V (bzw. Strg+V) ein.',
+  dogado: 'Melde dich im Dogado Webmail an (webmail.dogado.de). Klicke auf Einstellungen (Zahnrad) → Identitäten (oder Signaturen) und wähle deine Adresse. Aktiviere die Option „HTML-Signatur“, klicke hier auf „Formatiert kopieren“ und füge sie mit ⌘V (bzw. Strg+V) ein.',
   mobile: 'Kopiere die Textfassung. Öffne auf dem iPhone Einstellungen → Apps → Mail → Signatur oder in Outlook Einstellungen → Signatur.',
 };
 
@@ -1020,7 +1052,11 @@ export function MailSignaturesView() {
               <div className="space-y-3">
                 <div className={sectionTitle}>Im Mailprogramm einrichten</div>
                 <select className={inputClass} aria-label="Mailprogramm" value={client} onChange={event => setClient(event.currentTarget.value as keyof typeof clients)}>
-                  {Object.entries(clients).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                  {clientGroups.map(group => (
+                    <optgroup key={group.group} label={group.group}>
+                      {group.items.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+                    </optgroup>
+                  ))}
                 </select>
                 <p className="rounded-xl bg-[#F5F5F7] p-3 text-xs leading-relaxed text-gray-700">{instructions[client]}</p>
                 <div className="flex flex-col gap-2">
