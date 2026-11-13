@@ -1,4 +1,4 @@
-import { applyRegionToCanvas, pdfRedactionRegion } from './imageEngine';
+import { burnRedactionsIntoPdf } from './pdfRedact';
 import {
   PDFDocument,
   PDFName,
@@ -286,50 +286,11 @@ export async function applyAnnotationsToPdf(
 
   if (redactionsByPage.size > 0) {
     try {
-      const loadingTask = pdfjsLib.getDocument({ data: originalPdfBytes.slice(0) });
-      const pdfJsDoc = await loadingTask.promise;
-
-      for (const [pageNumber, redactions] of redactionsByPage.entries()) {
-        const pageIndex = pageNumber - 1;
-        if (pageIndex < 0 || pageIndex >= pages.length) continue;
-
-        const pdfJsPage = await pdfJsDoc.getPage(pageNumber);
-        const renderScale = 2.2; // High-DPI rasterization for redacted pages
-        const viewport = pdfJsPage.getViewport({ scale: renderScale });
-
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext('2d')!;
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        await pdfJsPage.render({ canvasContext: ctx, viewport }).promise;
-
-        // Balken, Verpixelung, Weichzeichner oder Milchglas direkt in die Pixel einbrennen.
-        // Die Seite wird danach als Bild eingesetzt – der Text darunter ist nicht mehr im PDF.
-        for (const red of redactions) {
-          applyRegionToCanvas(canvas, pdfRedactionRegion(red, canvas.width, canvas.height));
-        }
-
-        const jpgDataUrl = canvas.toDataURL('image/jpeg', 0.92);
-        const jpgBytes = await fetch(jpgDataUrl).then((r) => r.arrayBuffer());
-        const embeddedRedactedPage = await pdfDoc.embedJpg(jpgBytes);
-
-        // Replace original vector page with clean redacted page of identical dimensions
-        const origPage = pdfDoc.getPage(pageIndex);
-        const { width, height } = origPage.getSize();
-        const newPage = pdfDoc.insertPage(pageIndex, [width, height]);
-        pdfDoc.removePage(pageIndex + 1);
-        newPage.drawImage(embeddedRedactedPage, {
-          x: 0,
-          y: 0,
-          width,
-          height,
-        });
-      }
+      await burnRedactionsIntoPdf(pdfDoc, originalPdfBytes, [...redactionsByPage.values()].flat());
     } catch (err) {
+      // Nie ein ungeschwärztes PDF ausgeben
       console.error('Fehler beim DSGVO-Schwärzen:', err);
+      throw new Error('Die Schwärzung konnte nicht eingebrannt werden. Das PDF wurde nicht gespeichert.');
     }
   }
 

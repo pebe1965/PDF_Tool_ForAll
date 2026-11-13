@@ -126,10 +126,32 @@ der Funktionsliste von v1.1.0.
    umgehen). **Diesen Schlüssel nie in dieses Repo kopieren**, nie ausgeben.
    Meldet das Skript einen Fehler, `marketplace.json` korrigieren und
    wiederholen.
-9. **Kontrolle:** `gh release view vX.Y.Z --json tagName,isDraft,isPrerelease,assets`
+9. **Browser- und Smartphone-Version aktualisieren:**
+   `gh workflow run pages.yml --ref main`, dann mit `gh run watch` abwarten.
+   Der Workflow veröffentlicht die Browser-Version (Startseite) und die
+   Smartphone-Version (`/mobil/`) auf GitHub Pages – Adresse
+   **toolbox.pberthold.com**. Ohne diesen Schritt bleibt das Smartphone auf
+   dem alten Stand.
+10. **Kontrolle:** `gh release view vX.Y.Z --json tagName,isDraft,isPrerelease,assets`
    — Tag stimmt, beide Dateien da, kein Entwurf. Erneuter Probelauf aus
    Schritt 8 meldet „bereits aktuell“.
 
 **Im Repo `pberthold-app` (NotionaryAtlas) sonst nichts ändern und dort nie
 committen oder pushen** — jeder Push dort löst einen kostenpflichtigen Build
 aus, und für ein Release ist keiner nötig.
+
+## 4. Smartphone-Version
+
+- Web-App für den Homescreen (offline-fähig), Code in `src/mobile/`,
+  Einstieg `mobile/index.html`, Build-Konfiguration `vite.mobile.config.ts`
+  (erzeugt auch Manifest und Service Worker). Entwickeln mit
+  `npm run dev:mobile`, bauen mit `npm run build:mobile`.
+- Sie nutzt dieselben Bausteine wie die Desktop-Version:
+  `src/lib/imageEngine.ts` (Effekte), `src/lib/pdfRedact.ts` (Schwärzung
+  einbrennen) und `src/lib/pdfTextSearch.ts` (Text suchen). Änderungen dort
+  wirken auf beide Versionen – beide testen.
+- Bewusst nur „unkenntlich machen“ (Bilder und PDFs). Alles bleibt auf dem
+  Gerät; es gibt keinen Server und keine KI-Aufrufe in der Smartphone-Version.
+- Die eigene Adresse ist in den GitHub-Pages-Einstellungen des Repos
+  hinterlegt (nicht als Datei `CNAME` – bei Veröffentlichung über GitHub
+  Actions wird sie ignoriert).

@@ -25,6 +25,9 @@ jobs:
       - run: npm run build -- --mode pages --base "${PAGES_BASE%/}/"
         env:
           PAGES_BASE: ${{ steps.pages.outputs.base_path }}
+      # Smartphone-Version (Web-App für den Homescreen) unter /mobil/
+      - run: npx vite build --config vite.mobile.config.ts
+      - run: mkdir -p dist/mobil && cp -R dist-mobile/. dist/mobil/
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist

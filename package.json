@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:mobile": "vite --config vite.mobile.config.ts",
+    "build:mobile": "tsc && vite build --config vite.mobile.config.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

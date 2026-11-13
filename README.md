@@ -27,6 +27,14 @@ Die fertigen Pakete findest du immer unter **[GitHub Releases](https://github.co
 2. Öffne die lokale URL in Safari auf dem iPad.
 3. *Tipp:* Tippe auf das Teilen-Symbol und wähle **„Zum Home-Bildschirm“** — das Tool lässt sich dann im Vollbildmodus inklusive Apple-Pencil-Unterstützung für Unterschriften und Freihand-Zeichnungen nutzen!
 
+### 📲 Für das Smartphone (iPhone & Android)
+Die kleine Toolbox für unterwegs läuft direkt im Browser – ohne Installation aus einem App Store:
+1. Öffne **toolbox.pberthold.com** auf dem Smartphone (Handys landen automatisch in der Smartphone-Version).
+2. Tippe auf **Teilen → „Zum Home-Bildschirm“** (Android: Menü ⋮ → „App installieren“).
+3. Danach startet sie wie eine App und funktioniert auch **ohne Internet**.
+
+Sie kann **Bilder und PDFs unkenntlich machen** (Farbbalken, Verpixeln, Weichzeichnen, Milchglas), Fotos direkt mit der Kamera aufnehmen und in PDFs Begriffe, IBANs, E-Mail-Adressen, Telefonnummern und Daten **suchen und schwärzen**. Alles bleibt auf dem Gerät; gesichert wird eine Kopie über das Teilen-Menü (z. B. „In Fotos sichern“ oder „In Dateien sichern“).
+
 ---
 
 ## 🌟 Funktionen im Überblick (Business Suite v1.2.0)
@@ -103,3 +111,5 @@ Unter **Im Mailprogramm einrichten** findest du den HTML- und Klartext-Export so
 ### Browser-App auf GitHub Pages
 
 Wähle im Repository unter **Settings → Pages → Build and deployment** die Quelle **GitHub Actions**. Starte danach unter **Actions** den Workflow **Browser-App veröffentlichen** auf dem gewünschten Branch. Der Workflow baut die App für den Pages-Pfad. Ein lokaler Produktions-Build ist mit `npm run build -- --mode pages --base /PDF_Tool_ForAll/` möglich.
+
+Der Workflow baut zusätzlich die **Smartphone-Version** und legt sie unter `/mobil/` ab. Smartphones werden von der Startseite automatisch dorthin geleitet; mit `?desktop` in der Adresse bleibt man bei der vollen Version. Entwickeln: `npm run dev:mobile` (Port 5174), bauen: `npm run build:mobile` (Ordner `dist-mobile/`). Der Code liegt in `src/mobile/` und nutzt dieselben Bausteine wie die Desktop-Version (`imageEngine`, `pdfRedact`, `pdfTextSearch`).

@@ -12,3 +12,6 @@ node_modules/
 PDF_Tool_ForAll.app
 PDF_Tool_ForAll.dmg
 PDF_Tool_ForAll_Windows.zip
+
+# Smartphone-Version (wird von GitHub Actions gebaut)
+dist-mobile/
