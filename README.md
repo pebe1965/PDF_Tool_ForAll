@@ -37,7 +37,7 @@ Sie kann:
 - **Bilder und PDFs unkenntlich machen** (Farbbalken, Verpixeln, Weichzeichnen, Milchglas) und in PDFs Begriffe, IBANs, E-Mail-Adressen, Telefonnummern und Daten **suchen und schwärzen**
 - **Dokumente scannen**: Seiten fotografieren, Ränder werden automatisch erkannt und gerade gerückt, Filter für Farbe, Graustufen oder Schwarz-Weiß, daraus ein PDF machen
 - **PDFs unterschreiben**: mit dem Finger unterschreiben (Unterschriften lassen sich merken), Text, Datum und Häkchen einfügen
-- **Seiten ordnen und zusammenführen**: mehrere PDFs und Fotos vereinen, Seiten verschieben, drehen, löschen, einzelne Seiten herausziehen oder jede Seite als eigenes PDF speichern
+- **Seiten ordnen und zusammenführen**: mehrere PDFs und Fotos vereinen, Seiten groß ansehen und zoomen, verschieben, drehen, löschen, einzelne Seiten herausziehen oder jede Seite als eigenes PDF speichern
 - **PDFs verkleinern** für E-Mail und Upload-Formulare
 
 Alles bleibt auf dem Gerät; gesichert wird eine Kopie über das Teilen-Menü (z. B. „In Fotos sichern“ oder „In Dateien sichern“).

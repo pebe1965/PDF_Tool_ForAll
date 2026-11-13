@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Files, FileStack, LoaderCircle, Plus, RotateCw, Scissors, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Files, FileStack, LoaderCircle, Maximize2, Plus, RotateCw, Scissors, Trash2 } from 'lucide-react';
+import PagePreview from './PagePreview';
+import { rotateCanvas } from './scanEngine';
 import ShareSheet from './ShareSheet';
 import { BottomSheet, EditorHeader, Toast } from './MobileUi';
 import { baseName, useHistory } from './mobileShared';
-import { assemblePages, dateStamp, imagesToPdf, loadPhoto, openPdfJs, pageThumb, pdfFile, type PageRef } from './pdfMobileOps';
+import { assemblePages, dateStamp, imagesToPdf, loadPhoto, openPdfJs, pageThumb, pdfFile, renderPage, type PageRef, type PdfJsDoc } from './pdfMobileOps';
 
 interface PageItem extends PageRef {
   key: string;
@@ -37,6 +39,38 @@ export default function MobilePages({ files, onClose }: { files: File[]; onClose
   const [toast, setToast] = useState<string | null>(null);
   const addRef = useRef<HTMLInputElement>(null);
   const started = useRef(false);
+  const [preview, setPreview] = useState<number | null>(null);
+  // Geöffnete PDFs und scharfe Ansichten für die Vollbild-Vorschau
+  const docs = useRef(new Map<string, Promise<PdfJsDoc>>());
+  const sharp = useRef(new Map<string, string>());
+
+  useEffect(
+    () => () => {
+      docs.current.forEach((d) => d.then((doc) => doc.destroy()).catch(() => {}));
+    },
+    [],
+  );
+
+  const renderSharp = async (i: number, width: number) => {
+    const p = pages[i];
+    const cacheKey = `${p.source}:${p.index}:${p.rotation}:${width}`;
+    const hit = sharp.current.get(cacheKey);
+    if (hit) return hit;
+    let doc = docs.current.get(p.source);
+    if (!doc) {
+      doc = openPdfJs(sources.current.get(p.source)!.bytes);
+      docs.current.set(p.source, doc);
+    }
+    const c = await renderPage(await doc, p.index + 1, width);
+    const rotated = rotateCanvas(c, p.rotation);
+    const url = rotated.toDataURL('image/jpeg', 0.88);
+    c.width = c.height = 0;
+    rotated.width = rotated.height = 0;
+    // Nur die letzten Ansichten behalten (Speicher am Handy ist knapp)
+    if (sharp.current.size >= 8) sharp.current.delete(sharp.current.keys().next().value!);
+    sharp.current.set(cacheKey, url);
+    return url;
+  };
 
   const showToast = (t: string) => {
     setToast(t);
@@ -65,7 +99,7 @@ export default function MobilePages({ files, onClose }: { files: File[]; onClose
         // Vorschaubilder nach und nach
         for (let p = 0; p < added.length; p++) {
           try {
-            const url = await pageThumb(doc, p + 1, 240);
+            const url = await pageThumb(doc, p + 1, 360);
             setThumbs((t) => ({ ...t, [added[p].key]: url }));
           } catch {
             /* Vorschau fehlt – Seite bleibt trotzdem nutzbar */
@@ -177,11 +211,13 @@ export default function MobilePages({ files, onClose }: { files: File[]; onClose
           {pages.map((p, i) => {
             const on = selected.has(p.key);
             return (
-              <button
+              <div
                 key={p.key}
-                type="button"
+                role="button"
+                tabIndex={0}
+                aria-pressed={on}
                 onClick={() => toggle(p.key)}
-                className={`relative flex aspect-[3/4] items-center justify-center overflow-hidden rounded-xl bg-white p-1.5 shadow-sm ${on ? 'ring-[3px] ring-[#0071E3]' : ''}`}
+                className={`relative flex aspect-[3/4] cursor-pointer items-center justify-center overflow-hidden rounded-xl bg-white p-1.5 shadow-sm ${on ? 'ring-[3px] ring-[#0071E3]' : ''}`}
               >
                 {thumbs[p.key] ? (
                   <img
@@ -199,7 +235,20 @@ export default function MobilePages({ files, onClose }: { files: File[]; onClose
                     <Check className="h-3.5 w-3.5 text-white" />
                   </span>
                 )}
-              </button>
+                <button
+                  type="button"
+                  aria-label={`Seite ${i + 1} groß ansehen`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPreview(i);
+                  }}
+                  className="absolute bottom-0 right-0 flex h-11 w-11 items-end justify-end p-1.5"
+                >
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white shadow">
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  </span>
+                </button>
+              </div>
             );
           })}
         </div>
@@ -210,7 +259,7 @@ export default function MobilePages({ files, onClose }: { files: File[]; onClose
           </div>
         )}
         {!loading && pages.length > 0 && selected.size === 0 && (
-          <p className="mt-4 text-center text-xs text-[#86868B]">Seiten antippen, um sie zu verschieben, zu drehen, zu löschen oder einzeln zu speichern.</p>
+          <p className="mt-4 text-center text-xs text-[#86868B]">Seiten antippen, um sie zu verschieben, zu drehen, zu löschen oder einzeln zu speichern. Mit dem Knopf unten rechts eine Seite groß ansehen und zoomen.</p>
         )}
       </div>
 
@@ -254,6 +303,24 @@ export default function MobilePages({ files, onClose }: { files: File[]; onClose
           }}
         />
       </div>
+
+      {preview !== null && pages[preview] && (
+        <PagePreview
+          count={pages.length}
+          index={preview}
+          onIndex={setPreview}
+          render={renderSharp}
+          thumb={thumbs[pages[preview].key]}
+          thumbRotation={pages[preview].rotation}
+          selected={selected.has(pages[preview].key)}
+          onToggleSelect={() => toggle(pages[preview].key)}
+          onRotate={() => {
+            const key = pages[preview].key;
+            history.commit(pages.map((p) => (p.key === key ? { ...p, rotation: (p.rotation + 90) % 360 } : p)));
+          }}
+          onClose={() => setPreview(null)}
+        />
+      )}
 
       {saveMenu && (
         <BottomSheet title="Sichern" onClose={() => setSaveMenu(false)}>
