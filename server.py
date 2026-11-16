@@ -10,6 +10,7 @@ import json
 import shutil
 import socket
 import zipfile
+import ssl
 import tempfile
 import webbrowser
 import urllib.request
@@ -19,6 +20,43 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 BASE_DIR = Path(__file__).resolve().parent
 DIST_DIR = BASE_DIR / "dist"
 GITHUB_RELEASE_API = "https://api.github.com/repos/pebe1965/PDF_Tool_ForAll/releases/latest"
+
+
+def make_ssl_context():
+    """SSL-Kontext mit Stammzertifikaten.
+
+    Das Python von python.org bringt auf macOS keine Zertifikate mit (solange
+    "Install Certificates.command" nicht ausgeführt wurde). Dann schlägt jede
+    HTTPS-Verbindung mit CERTIFICATE_VERIFY_FAILED fehl. Daher greifen wir
+    nacheinander auf certifi und die Zertifikatsdateien des Systems zurück.
+    """
+    ctx = ssl.create_default_context()
+    if ctx.cert_store_stats().get("x509_ca", 0) > 0:
+        return ctx
+    candidates = []
+    try:
+        import certifi  # optional
+        candidates.append(certifi.where())
+    except Exception:
+        pass
+    candidates += [
+        "/etc/ssl/cert.pem",                    # macOS
+        "/private/etc/ssl/cert.pem",
+        "/etc/ssl/certs/ca-certificates.crt",   # Debian/Ubuntu
+        "/etc/pki/tls/certs/ca-bundle.crt",     # Fedora/RHEL
+    ]
+    for path in candidates:
+        try:
+            if path and os.path.isfile(path):
+                ctx.load_verify_locations(cafile=path)
+                if ctx.cert_store_stats().get("x509_ca", 0) > 0:
+                    return ctx
+        except Exception:
+            continue
+    return ctx
+
+
+SSL_CONTEXT = make_ssl_context()
 
 def find_free_port(preferred_ports=(5173, 8080, 8000)):
     for port in preferred_ports:
@@ -61,7 +99,7 @@ class SinglePageAppHandler(SimpleHTTPRequestHandler):
                     GITHUB_RELEASE_API,
                     headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "Toolbox-Updater"}
                 )
-                with urllib.request.urlopen(req, timeout=20) as resp:
+                with urllib.request.urlopen(req, timeout=20, context=SSL_CONTEXT) as resp:
                     release_data = json.loads(resp.read().decode("utf-8"))
 
                 tag_name = release_data.get("tag_name", "").lstrip("vV")
@@ -81,7 +119,7 @@ class SinglePageAppHandler(SimpleHTTPRequestHandler):
                     tmp_path = Path(tmpdir)
                     zip_file_path = tmp_path / "update.zip"
                     dl_req = urllib.request.Request(zip_url, headers={"User-Agent": "Toolbox-Updater"})
-                    with urllib.request.urlopen(dl_req, timeout=60) as dl_resp, open(zip_file_path, "wb") as out_f:
+                    with urllib.request.urlopen(dl_req, timeout=60, context=SSL_CONTEXT) as dl_resp, open(zip_file_path, "wb") as out_f:
                         shutil.copyfileobj(dl_resp, out_f)
 
                     extract_dir = tmp_path / "extracted"
@@ -109,7 +147,12 @@ class SinglePageAppHandler(SimpleHTTPRequestHandler):
 
                 self._send_json(200, {"ok": True, "version": tag_name})
             except Exception as exc:
-                self._send_json(500, {"ok": False, "error": str(exc)})
+                msg = str(exc)
+                if "CERTIFICATE_VERIFY_FAILED" in msg:
+                    msg = ("Die sichere Verbindung zu GitHub konnte nicht geprüft werden "
+                           "(Zertifikate fehlen). Bitte das Update einmal über den "
+                           "Download-Knopf installieren.")
+                self._send_json(500, {"ok": False, "error": msg})
             return
 
         self._send_json(404, {"ok": False, "error": "Not found"})
