@@ -1,5 +1,8 @@
+import { designCanvas, type PageBackgrounds } from './pageDesign';
 import { burnRedactionsIntoPdf } from './pdfRedact';
 import {
+  PDFArray,
+  type PDFImage,
   PDFDocument,
   PDFName,
   PDFPage,
@@ -236,16 +239,26 @@ export function applyPageBackground(doc: PDFDocument, page: PDFPage, hexColor: s
 
   // q = push state, r g b rg = fill color, 0 0 w h re = rect, f = fill, Q = pop state
   const bgContent = `q ${r.toFixed(4)} ${g.toFixed(4)} ${b.toFixed(4)} rg 0 0 ${width.toFixed(2)} ${height.toFixed(2)} re f Q`;
-  const bgStream = doc.context.stream(bgContent);
-  const bgStreamRef = doc.context.register(bgStream);
+  prependPageContent(doc, page, bgContent);
+}
 
+function prependPageContent(doc: PDFDocument, page: PDFPage, commands: string) {
+  const ref = doc.context.register(doc.context.stream(commands));
   page.node.normalize();
   const contents = page.node.Contents();
-  if (contents && typeof (contents as any).insert === 'function') {
-    (contents as any).insert(0, bgStreamRef);
-  } else {
-    page.node.set(PDFName.of('Contents'), doc.context.obj([bgStreamRef]));
-  }
+  if (contents instanceof PDFArray) contents.insert(0, ref);
+  else page.node.set(PDFName.of('Contents'), doc.context.obj([ref]));
+}
+
+// Map coordinates from the displayed crop box into PDF user space.
+function displayedPage(page: PDFPage) {
+  const { x, y, width, height } = page.getCropBox();
+  const angle = (page.getRotation().angle % 360 + 360) % 360;
+  const [a, b, c, d, tx, ty] = angle === 90 ? [0, 1, -1, 0, width, 0]
+    : angle === 180 ? [-1, 0, 0, -1, width, height]
+    : angle === 270 ? [0, -1, 1, 0, 0, height] : [1, 0, 0, 1, 0, 0];
+  return { angle, width: angle % 180 ? height : width, height: angle % 180 ? width : height,
+    a, b, c, d, x: x + tx, y: y + ty };
 }
 
 /**
@@ -255,7 +268,7 @@ export function applyPageBackground(doc: PDFDocument, page: PDFPage, hexColor: s
 export async function applyAnnotationsToPdf(
   originalPdfBytes: ArrayBuffer,
   annotations: Annotation[],
-  pageBackgrounds?: Record<number, string>
+  pageBackgrounds?: PageBackgrounds
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(originalPdfBytes);
   const fontCache = new Map<string, any>();
@@ -263,11 +276,28 @@ export async function applyAnnotationsToPdf(
 
   // Apply page backgrounds at the very bottom (layer 0)
   if (pageBackgrounds) {
+    const images = new Map<string, PDFImage>();
     for (let idx = 0; idx < pages.length; idx++) {
       const pageNum = idx + 1;
       const bg = pageBackgrounds[pageNum] || pageBackgrounds[-1];
-      if (bg && bg.trim() && bg.toUpperCase() !== '#FFFFFF') {
+      if (typeof bg === 'string') {
         applyPageBackground(pdfDoc, pages[idx], bg);
+      } else if (bg) {
+        const page = pages[idx];
+        const view = displayedPage(page);
+        const cacheKey = JSON.stringify([view.width, view.height, bg]);
+        let image = images.get(cacheKey);
+        if (!image) {
+          const scale = Math.min(2.5, 2400 / Math.max(view.width, view.height));
+          const canvas = designCanvas(bg, view.width * scale, view.height * scale);
+          image = await pdfDoc.embedPng(canvas.toDataURL('image/png'));
+          images.set(cacheKey, image);
+        }
+        page.node.normalize();
+        const key = page.node.newXObject('Background', image.ref);
+        const matrix = [view.a * view.width, view.b * view.width, view.c * view.height,
+          view.d * view.height, view.x, view.y];
+        prependPageContent(pdfDoc, page, `q ${matrix.join(' ')} cm ${key} Do Q`);
       }
     }
   }
@@ -286,7 +316,8 @@ export async function applyAnnotationsToPdf(
 
   if (redactionsByPage.size > 0) {
     try {
-      await burnRedactionsIntoPdf(pdfDoc, originalPdfBytes, [...redactionsByPage.values()].flat());
+      await burnRedactionsIntoPdf(pdfDoc, pageBackgrounds && Object.keys(pageBackgrounds).length
+        ? (await pdfDoc.save()).buffer as ArrayBuffer : originalPdfBytes, [...redactionsByPage.values()].flat());
     } catch (err) {
       // Nie ein ungeschwärztes PDF ausgeben
       console.error('Fehler beim DSGVO-Schwärzen:', err);
@@ -310,7 +341,26 @@ export async function applyAnnotationsToPdf(
     const page = updatedPages[pageIndex];
     const { width: pageWidth, height: pageHeight } = page.getSize();
 
-    if (ann.type === 'highlight') {
+    if (ann.type === 'form-text') {
+      const form = pdfDoc.getForm();
+      const base = ann.name.trim().replace(/\./g, '·') || 'Textfeld';
+      let name = base;
+      let suffix = 2;
+      // Imported PDFs can also have non-terminal fields with the same prefix.
+      const taken = form.getFields().map(f => f.getName());
+      while (taken.some(existing => existing === name || existing.startsWith(name + '.'))) name = `${base} (${suffix++})`;
+      const field = form.createTextField(name);
+      if (ann.multiline) field.enableMultiline();
+      const view = displayedPage(page);
+      const left = ann.x * view.width;
+      const bottom = (1 - ann.y - ann.height) * view.height;
+      field.addToPage(page, {
+        x: view.x + view.a * left + view.c * bottom,
+        y: view.y + view.b * left + view.d * bottom,
+        width: ann.width * view.width, height: ann.height * view.height,
+        rotate: degrees(view.angle), borderWidth: 0.75, borderColor: rgb(.4, .45, .5),
+      });
+    } else if (ann.type === 'highlight') {
       try {
         const hlX = ann.x * pageWidth;
         const hlW = ann.width * pageWidth;

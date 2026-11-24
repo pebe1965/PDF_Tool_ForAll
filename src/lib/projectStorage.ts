@@ -1,3 +1,4 @@
+import type { PageBackgrounds } from './pageDesign';
 import { Annotation } from '../types/pdf';
 
 const DB_NAME = 'PdfToolForAll_WorkspaceDB';
@@ -10,7 +11,7 @@ export interface SavedWorkspaceDraft {
   documentTitle: string;
   pdfBytes: ArrayBuffer;
   annotations: Annotation[];
-  pageBackgrounds?: Record<number, string>;
+  pageBackgrounds?: PageBackgrounds;
   currentPage: number;
   updatedAt: number;
 }
@@ -24,7 +25,7 @@ export interface ProjectFilePayload {
   savedAt: string;
   pdfBase64: string;
   annotations: Annotation[];
-  pageBackgrounds?: Record<number, string>;
+  pageBackgrounds?: PageBackgrounds;
 }
 
 function openWorkspaceDb(): Promise<IDBDatabase> {
@@ -117,11 +118,11 @@ export async function exportProjectFile(
   documentTitle: string,
   currentPage: number,
   useFilePicker: boolean = false,
-  pageBackgrounds?: Record<number, string>
+  pageBackgrounds?: PageBackgrounds
 ): Promise<boolean> {
   const payload: ProjectFilePayload = {
     format: 'PDF_TOOL_FORALL_PROJECT_V1',
-    version: '1.3.0',
+    version: '1.4.0',
     fileName,
     documentTitle,
     currentPage,
@@ -172,7 +173,7 @@ export async function exportProjectFile(
 export async function importProjectFile(file: File): Promise<{
   pdfBytes: ArrayBuffer;
   annotations: Annotation[];
-  pageBackgrounds?: Record<number, string>;
+  pageBackgrounds?: PageBackgrounds;
   fileName: string;
   documentTitle: string;
   currentPage: number;

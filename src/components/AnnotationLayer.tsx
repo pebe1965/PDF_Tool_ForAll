@@ -34,6 +34,7 @@ import {
   SignatureAnnotation,
   ImageAnnotation,
   HighlightAnnotation,
+  FormTextAnnotation,
   RedactionAnnotation,
   ShapeAnnotation,
   FreehandDrawingAnnotation,
@@ -1357,7 +1358,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       | TextAnnotation
       | SignatureAnnotation
       | ImageAnnotation
-      | HighlightAnnotation
+      | FormTextAnnotation | HighlightAnnotation
       | RedactionAnnotation
       | ShapeAnnotation
       | TextArtAnnotation
@@ -1389,7 +1390,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   // Start resizing generic 2D box (Signature, Highlight, Redaction, Shape, TextArt)
   const handlePointerDownBoxResize = (
     e: React.PointerEvent,
-    ann: SignatureAnnotation | HighlightAnnotation | RedactionAnnotation | ShapeAnnotation | TextArtAnnotation,
+    ann: SignatureAnnotation | FormTextAnnotation | HighlightAnnotation | RedactionAnnotation | ShapeAnnotation | TextArtAnnotation,
     resizeType: 'corner' | 'right' | 'bottom' = 'corner'
   ) => {
     e.stopPropagation();
@@ -1478,7 +1479,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
 
       const ann = annotations.find((a) => a.id === resizingBoxId) as
         | SignatureAnnotation
-        | HighlightAnnotation
+        | FormTextAnnotation | HighlightAnnotation
         | RedactionAnnotation
         | ShapeAnnotation
         | TextArtAnnotation
@@ -1643,6 +1644,29 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
               onStartRightResize={(e) => handlePointerDownImageResize(e, ann as ImageAnnotation, 'right')}
               onStartBottomResize={(e) => handlePointerDownImageResize(e, ann as ImageAnnotation, 'bottom')}
             />
+          );
+        }
+
+        if (ann.type === 'form-text') {
+          return (
+            <div key={ann.id} onPointerDown={e => handlePointerDownDrag(e, ann)}
+              onClick={e => { e.stopPropagation(); onSelectAnnotation(ann.id); }}
+              className={`absolute pointer-events-auto cursor-move border border-slate-500 bg-white text-slate-600 ${isSelected ? 'ring-2 ring-blue-500 z-20' : ''}`}
+              style={{ left: ann.x * pageWidth, top: ann.y * pageHeight, width: ann.width * pageWidth, height: ann.height * pageHeight }}>
+              <span className="block truncate px-1 text-xs">{ann.name || 'Formularfeld'}</span>
+              {isSelected && <>
+                <div className="absolute left-0 bottom-full flex items-center gap-2 rounded-lg bg-slate-800 text-white p-2 text-xs shadow"
+                  onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+                  <input aria-label="Feldname" placeholder="Feldname" className="w-24 rounded text-black px-1"
+                    value={ann.name} onChange={e => onUpdateAnnotation({ ...ann, name: e.target.value })} />
+                  <label className="flex gap-1"><input type="checkbox" checked={ann.multiline}
+                    onChange={e => onUpdateAnnotation({ ...ann, multiline: e.target.checked })} />Mehrzeilig</label>
+                  <button title="Feld löschen" onClick={() => onDeleteAnnotation(ann.id)}><Trash2 size={14}/></button>
+                </div>
+                <div title="Feldgröße ändern" onPointerDown={e => handlePointerDownBoxResize(e, ann)}
+                  className="absolute -bottom-2 -right-2 w-4 h-4 bg-blue-600 rounded-full cursor-se-resize ring-2 ring-white" />
+              </>}
+            </div>
           );
         }
 

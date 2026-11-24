@@ -210,7 +210,7 @@ export const SaveDocumentModal: React.FC<SaveDocumentModalProps> = ({
                     </span>
                   </div>
                   <div className="text-[11px] text-blue-100 mt-0.5">
-                    Alle Texte, Bilder, Checklisten & Stempel fest in die PDF einbetten (für Versand & Druck)
+                    Für Versand und Druck speichern. Formularfelder bleiben für Empfänger ausfüllbar.
                   </div>
                 </div>
               </div>

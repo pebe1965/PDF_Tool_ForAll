@@ -120,7 +120,14 @@ export interface TextArtAnnotation {
   stretchToFit?: boolean; // true = fill full box (width & height), false = preserve aspect ratio
 }
 
+export interface FormTextAnnotation extends Omit<HighlightAnnotation, 'type' | 'color'> {
+  type: 'form-text';
+  name: string;
+  multiline: boolean;
+}
+
 export type Annotation =
+  | FormTextAnnotation
   | TextAnnotation
   | SignatureAnnotation
   | FreehandDrawingAnnotation

@@ -1,3 +1,4 @@
+import { asDesign, backgroundPaint, type PageBackground, type PageBackgrounds } from '../lib/pageDesign';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Upload,
@@ -117,6 +118,7 @@ interface PdfEditorViewProps {
 
 type EditorTool =
   | 'select'
+  | 'add-form'
   | 'add-text'
   | 'add-highlight'
   | 'add-redaction'
@@ -156,7 +158,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isDecorationsModalOpen, setIsDecorationsModalOpen] = useState(false);
   const [isBackgroundModalOpen, setIsBackgroundModalOpen] = useState(false);
-  const [pageBackgrounds, setPageBackgrounds] = useState<Record<number, string>>({});
+  const [pageBackgrounds, setPageBackgrounds] = useState<PageBackgrounds>({});
   const [isTextArtModalOpen, setIsTextArtModalOpen] = useState(false);
   const [isRedactSearchOpen, setIsRedactSearchOpen] = useState(false);
   const [editingTextArt, setEditingTextArt] = useState<TextArtAnnotation | null>(null);
@@ -536,6 +538,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       });
       setFile(mockFile);
       setDocumentTitle('Neues_Dokument');
+      setPageBackgrounds({});
       setAnnotations([]);
       setUndoStack([]);
       setRedoStack([]);
@@ -624,6 +627,9 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
           .map((a) => (a.pageNumber > pageToDelete ? { ...a, pageNumber: a.pageNumber - 1 } : a))
       );
 
+      setPageBackgrounds(prev => Object.fromEntries(Object.entries(prev)
+        .filter(([n]) => Number(n) !== pageToDelete)
+        .map(([n, bg]) => [Number(n) > pageToDelete ? Number(n) - 1 : n, bg])));
       const targetPage = Math.max(1, Math.min(currentPage, numPages - 1));
       await reloadPdfFromBuffer(updatedBytes, targetPage);
     } catch (err) {
@@ -691,16 +697,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       ctx.save();
       ctx.scale(dpr, dpr);
 
-      // 1. Draw solid background color (supports dark mode / custom cover / page backgrounds)
-      const currentBg = pageBackgrounds[currentPage] || '#FFFFFF';
-      ctx.fillStyle = currentBg;
-      ctx.fillRect(0, 0, viewport.width, viewport.height);
-      if (pageContainerRef.current) {
-        pageContainerRef.current.style.backgroundColor = currentBg;
-      }
-      if (canvasRef.current) {
-        canvasRef.current.style.backgroundColor = currentBg;
-      }
+      const currentBg = backgroundPaint(ctx, pageBackgrounds[currentPage], viewport.width, viewport.height);
 
       const renderContext = {
         canvasContext: ctx,
@@ -739,10 +736,19 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     const normX = Math.max(0.02, Math.min(0.75, clickX / canvasDimensions.width));
     const normY = Math.max(0.02, Math.min(0.92, clickY / canvasDimensions.height));
 
-    if (activeTool === 'add-text') {
+    if (activeTool === 'add-form') {
+      e.stopPropagation();
+      const id = `field_${Date.now()}`;
+      pushAnnotationsChange(prev => [...prev, {
+        id, type: 'form-text', pageNumber: currentPage, x: Math.min(normX, 0.7), y: normY,
+        width: 0.3, height: 0.04, name: `Textfeld ${prev.filter(a => a.type === 'form-text').length + 1}`, multiline: false,
+      }]);
+      setSelectedAnnId(id);
+      setActiveTool('select');
+    } else if (activeTool === 'add-text') {
       const currentBg = pageBackgrounds[currentPage] || '#FFFFFF';
       const isDark = (() => {
-        const clean = currentBg.replace('#', '');
+        const clean = asDesign(currentBg).start.replace('#', '');
         if (clean.length !== 6) return false;
         const num = parseInt(clean, 16);
         return ((num >> 16 & 255) * 299 + (num >> 8 & 255) * 587 + (num & 255) * 114) / 1000 < 128;
@@ -1188,6 +1194,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       );
       await reloadPdfFromBuffer(updatedBytes, currentPage);
 
+      if (additionalCount) setPageBackgrounds(prev => Object.fromEntries(Object.entries(prev)
+        .map(([n, bg]) => [Number(n) > currentPage ? Number(n) + additionalCount : n, bg])));
       const page1Ann: TextAnnotation = {
         id: `text_${Date.now()}_0`,
         type: 'text',
@@ -1248,6 +1256,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
       await reloadPdfFromBuffer(updatedBytes, currentPage);
 
+      if (additionalCount) setPageBackgrounds(prev => Object.fromEntries(Object.entries(prev)
+        .map(([n, bg]) => [Number(n) > currentPage ? Number(n) + additionalCount : n, bg])));
       const page1Ann: TextAnnotation = {
         id: `text_${Date.now()}_0`,
         type: 'text',
@@ -1428,12 +1438,12 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   };
 
   // Page background handler
-  const handleApplyBackground = (color: string, scope: 'currentPage' | 'allPages') => {
+  const handleApplyBackground = (color: PageBackground, scope: 'currentPage' | 'allPages') => {
     setPageBackgrounds((prev) => {
       const updated = { ...prev };
       if (scope === 'allPages') {
         for (let p = 1; p <= numPages; p++) {
-          updated[p] = color;
+          if (p === currentPage || !asDesign(prev[p] || '#ffffff').locked) updated[p] = color;
         }
       } else {
         updated[currentPage] = color;
@@ -1446,7 +1456,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     setPageBackgrounds((prev) => {
       const updated = { ...prev };
       if (scope === 'allPages') {
-        return {};
+        return Object.fromEntries(Object.entries(prev).filter(([page, bg]) => Number(page) !== currentPage && asDesign(bg).locked));
       } else {
         delete updated[currentPage];
         return updated;
@@ -1820,6 +1830,13 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                 <span>Text</span>
               </button>
 
+              <button title="Ausfüllbares Textfeld im PDF platzieren"
+                aria-pressed={activeTool === 'add-form'}
+                onClick={() => setActiveTool(activeTool === 'add-form' ? 'select' : 'add-form')}
+                className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold ${activeTool === 'add-form' ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>
+                Formularfeld
+              </button>
+
               {/* Quick Lists & Checklists Dropdown */}
               <div className="relative">
                 <button
@@ -2093,7 +2110,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                     ? 'bg-purple-100 text-purple-900 border border-purple-200'
                     : 'bg-[#F5F5F7] hover:bg-purple-50 hover:text-purple-700 text-[#1D1D1F]'
                 }`}
-                title="Seitenhintergrundfarbe (Schwarz, Creme, Weiß oder frei) für diese Seite oder das gesamte Dokument wählen"
+                title="Seitenhintergrund mit Farben, Verläufen und Festmotiven gestalten"
               >
                 <Palette
                   size={14}
@@ -2307,6 +2324,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
               <span>
                 {activeTool === 'add-text' &&
                   'Klicke auf die PDF-Seite, um das Textfeld zu platzieren.'}
+                {activeTool === 'add-form' && 'Klicke auf die Seite, um ein ausfüllbares Formularfeld zu platzieren.'}
                 {activeTool === 'add-highlight' &&
                   'Klicke auf die Stelle im PDF, die du mit dem Textmarker hervorheben möchtest.'}
                 {activeTool === 'add-redaction' &&
@@ -2407,7 +2425,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                       <div
                         className="w-24 h-32 border border-gray-200 rounded flex items-center justify-center text-xs font-semibold shadow-inner transition-colors"
                         style={{
-                          backgroundColor: pageBackgrounds[pNum] || '#FFFFFF',
+                          backgroundColor: asDesign(pageBackgrounds[pNum] || '#FFFFFF').start,
                         }}
                       >
                         <FileText
@@ -2487,7 +2505,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                   style={{
                     width: canvasDimensions.width || 'auto',
                     height: canvasDimensions.height || 'auto',
-                    backgroundColor: pageBackgrounds[currentPage] || '#FFFFFF',
+                    backgroundColor: asDesign(pageBackgrounds[currentPage] || '#FFFFFF').start,
                   }}
                 >
                   {/* Mozilla PDF.js Canvas */}
@@ -2495,7 +2513,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                     ref={canvasRef}
                     className="block"
                     style={{
-                      backgroundColor: pageBackgrounds[currentPage] || '#FFFFFF',
+                      backgroundColor: asDesign(pageBackgrounds[currentPage] || '#FFFFFF').start,
                     }}
                   />
 
@@ -2654,6 +2672,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
         onClose={() => setIsBackgroundModalOpen(false)}
         currentPage={currentPage}
         numPages={numPages}
+        aspect={canvasDimensions.width / canvasDimensions.height || 0.707}
         currentColor={pageBackgrounds[currentPage] || '#FFFFFF'}
         onApplyBackground={handleApplyBackground}
         onResetBackground={handleResetBackground}
