@@ -1,5 +1,5 @@
-import { asDesign, backgroundPaint, type PageBackground, type PageBackgrounds } from '../lib/pageDesign';
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { asDesign, drawDesign, type PageBackground, type PageBackgrounds } from '../lib/pageDesign';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import {
   Upload,
   Type,
@@ -158,6 +158,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   const [isStampModalOpen, setIsStampModalOpen] = useState(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isDecorationsModalOpen, setIsDecorationsModalOpen] = useState(false);
+  const [backgroundPreview, setBackgroundPreview] = useState<PageBackground | null>(null);
+  const [pageRaster, setPageRaster] = useState<HTMLCanvasElement | null>(null);
   const [isBackgroundModalOpen, setIsBackgroundModalOpen] = useState(false);
   const [pageBackgrounds, setPageBackgrounds] = useState<PageBackgrounds>({});
   const [isTextArtModalOpen, setIsTextArtModalOpen] = useState(false);
@@ -675,49 +677,53 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
     }
   };
 
-  // Render current page on canvas
-  const renderCurrentPage = useCallback(async () => {
-    if (!pdfDoc || !canvasRef.current) return;
-
-    try {
-      const page = await pdfDoc.getPage(currentPage);
-      const viewport = page.getViewport({ scale });
-
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = viewport.width * dpr;
-      canvas.height = viewport.height * dpr;
-
-      canvas.style.width = `${viewport.width}px`;
-      canvas.style.height = `${viewport.height}px`;
-      setCanvasDimensions({ width: viewport.width, height: viewport.height });
-
-      ctx.save();
-      ctx.scale(dpr, dpr);
-
-      const currentBg = backgroundPaint(ctx, pageBackgrounds[currentPage], viewport.width, viewport.height);
-
-      const renderContext = {
-        canvasContext: ctx,
-        viewport: viewport,
-        background: currentBg,
-      };
-
-      await page.render(renderContext as any).promise;
-      ctx.restore();
-      // Live-Vorschau von Verpixeln/Weichzeichnen braucht die fertig gerenderte Seite
-      setPageRenderVersion((v) => v + 1);
-    } catch (err) {
-      console.error('Render error:', err);
-    }
-  }, [pdfDoc, currentPage, scale, pageBackgrounds]);
-
+  // Keep the PDF content separate so a moving background motif only needs
+  // a new composition, even on a page with complex text or graphics.
   useEffect(() => {
-    renderCurrentPage();
-  }, [renderCurrentPage]);
+    if (!pdfDoc || isHomeView || !canvasRef.current) {
+      setPageRaster(null);
+      return;
+    }
+    let cancelled = false;
+    let task: { cancel: () => void; promise: Promise<void> } | undefined;
+    const render = async () => {
+      const page = await pdfDoc.getPage(currentPage);
+      if (cancelled) return;
+      const viewport = page.getViewport({ scale });
+      const dpr = window.devicePixelRatio || 1;
+      const raster = document.createElement('canvas');
+      raster.width = Math.ceil(viewport.width * dpr);
+      raster.height = Math.ceil(viewport.height * dpr);
+      task = page.render({
+        canvasContext: raster.getContext('2d'), viewport,
+        transform: [dpr, 0, 0, dpr, 0, 0], background: 'rgba(0,0,0,0)',
+      });
+      await task!.promise;
+      if (!cancelled) {
+        setCanvasDimensions({ width: viewport.width, height: viewport.height });
+        setPageRaster(raster);
+      }
+    };
+    render().catch(err => { if (!cancelled) console.error('Render error:', err); });
+    return () => { cancelled = true; task?.cancel(); };
+  }, [pdfDoc, currentPage, scale, isHomeView]);
+
+  const visibleBackground = (isBackgroundModalOpen && backgroundPreview) || pageBackgrounds[currentPage] || '#FFFFFF';
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx || !pageRaster) return;
+    if (canvas.width !== pageRaster.width) canvas.width = pageRaster.width;
+    if (canvas.height !== pageRaster.height) canvas.height = pageRaster.height;
+    if (typeof visibleBackground === 'string') {
+      ctx.fillStyle = visibleBackground;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    } else {
+      drawDesign(ctx, visibleBackground, canvas.width, canvas.height);
+    }
+    ctx.drawImage(pageRaster, 0, 0);
+    setPageRenderVersion(v => v + 1);
+  }, [pageRaster, visibleBackground]);
 
   // Handle click on PDF to place Text, Highlight, or Redaction
   const handlePageClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -2521,6 +2527,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                     ref={canvasRef}
                     className="block"
                     style={{
+                      width: canvasDimensions.width, height: canvasDimensions.height,
                       backgroundColor: asDesign(pageBackgrounds[currentPage] || '#FFFFFF').start,
                     }}
                   />
@@ -2679,7 +2686,8 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       <PageBackgroundModal
         guidesEnabled={guidesEnabled}
         isOpen={isBackgroundModalOpen}
-        onClose={() => setIsBackgroundModalOpen(false)}
+        onPreview={setBackgroundPreview}
+        onClose={() => { setIsBackgroundModalOpen(false); setBackgroundPreview(null); }}
         currentPage={currentPage}
         numPages={numPages}
         aspect={canvasDimensions.width / canvasDimensions.height || 0.707}

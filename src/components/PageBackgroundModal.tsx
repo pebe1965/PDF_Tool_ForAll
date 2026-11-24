@@ -2,7 +2,7 @@ import { alignAxis, alignmentTargets } from '../lib/alignment';
 import { AlignmentGuides, type GuidePosition } from './AlignmentGuides';
 import { asDesign, drawDesign, gradients, occasions, type Motif, type PageDesign, type PageBackground } from '../lib/pageDesign';
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Palette, Check, RotateCcw } from 'lucide-react';
+import { X, GripVertical, Check, RotateCcw } from 'lucide-react';
 
 const motifNames = new Map(Object.values(occasions).flat());
 
@@ -14,6 +14,7 @@ export interface PageBackgroundModalProps {
   numPages: number;
   aspect: number;
   currentColor: PageBackground;
+  onPreview: (design: PageDesign) => void;
   onApplyBackground: (color: PageBackground, scope: 'currentPage' | 'allPages') => void;
   onResetBackground: (scope: 'currentPage' | 'allPages') => void;
 }
@@ -34,7 +35,7 @@ export const PageBackgroundModal: React.FC<PageBackgroundModalProps> = ({
   onClose,
   currentPage,
   numPages,
-  aspect, currentColor,
+  aspect, currentColor, onPreview,
   onApplyBackground,
   onResetBackground,
 }) => {
@@ -42,10 +43,17 @@ export const PageBackgroundModal: React.FC<PageBackgroundModalProps> = ({
   const [scope, setScope] = useState<'currentPage' | 'allPages'>('currentPage');
   const [occasion, setOccasion] = useState('Weihnachten');
   const [selected, setSelected] = useState(-1);
+  const panel = useRef<HTMLDivElement>(null);
+  const windowDrag = useRef<{ id: number; x: number; y: number } | null>(null);
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const preview = useRef<HTMLCanvasElement>(null);
   const dragOffset = useRef<{ x: number; y: number } | null>(null);
   const [guides, setGuides] = useState<GuidePosition>({});
-  const change = (patch: Partial<PageDesign>) => setDesign(prev => ({ ...prev, ...patch }));
+  const change = (patch: Partial<PageDesign>) => {
+    const next = { ...design, ...patch };
+    setDesign(next);
+    onPreview(next);
+  };
 
   const motif = design.motifs[selected];
   const updateMotif = (patch: Partial<Motif>) =>
@@ -97,23 +105,36 @@ export const PageBackgroundModal: React.FC<PageBackgroundModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full overflow-hidden border border-[#D2D2D7]/60 flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E8E8ED] bg-[#F5F5F7]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2">
+      <div ref={panel} role="dialog" aria-modal="true" aria-label="Seitenhintergrund"
+        className="background-design-window bg-white rounded-3xl shadow-2xl overflow-hidden border border-[#D2D2D7] flex flex-col max-h-[94vh]"
+        style={position ? {
+          position: 'absolute', left: 0, top: 0,
+          transform: `translate(clamp(8px, ${position.x}px, calc(100vw - 100% - 8px)), clamp(8px, ${position.y}px, calc(100vh - 100% - 8px)))`,
+        } : undefined}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E8E8ED] bg-[#F5F5F7] cursor-grab active:cursor-grabbing touch-none select-none"
+          onPointerDown={e => {
+            if (e.button !== 0 || !e.isPrimary || (e.target as Element).closest('button')) return;
+            const rect = panel.current!.getBoundingClientRect();
+            windowDrag.current = { id: e.pointerId, x: e.clientX - rect.left, y: e.clientY - rect.top };
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={e => {
+            const drag = windowDrag.current;
+            if (drag?.id === e.pointerId) setPosition({ x: e.clientX - drag.x, y: e.clientY - drag.y });
+          }}
+          onLostPointerCapture={() => { windowDrag.current = null; }}>
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-purple-600/10 text-purple-700 flex items-center justify-center shadow-sm">
-              <Palette size={19} />
-            </div>
+            <GripVertical size={20} className="text-gray-500 shrink-0" aria-hidden="true" />
             <div>
               <h2 className="text-base font-bold text-[#1D1D1F]">Seitenhintergrund</h2>
               <p className="text-xs text-[#86868B]">
-                Farben und Motive für eine oder mehrere Seiten gestalten
+                An der Titelleiste ziehen, um das Fenster zu verschieben.
               </p>
             </div>
           </div>
           <button
-            onClick={onClose}
+            aria-label="Schließen" onClick={onClose}
             className="p-1.5 rounded-full hover:bg-gray-200 text-gray-500 hover:text-gray-800 transition cursor-pointer"
           >
             <X size={18} />
@@ -122,13 +143,13 @@ export const PageBackgroundModal: React.FC<PageBackgroundModalProps> = ({
 
         {/* Body */}
         <div className="p-6 overflow-y-auto space-y-5">
-          <div className="grid sm:grid-cols-[2fr_3fr] gap-5 items-start text-xs">
-            <div className="sm:sticky sm:top-0 space-y-2">
+          <div className="background-design-columns grid gap-5 items-start text-xs">
+            <div className="background-design-preview space-y-2">
               <h3 className="font-bold">Vorschau · Seite {currentPage}</h3>
               <div className="relative w-fit max-w-full mx-auto">
               <canvas ref={preview} width={Math.round(600 * Math.min(1, aspect))}
                 height={Math.round(600 / Math.max(1, aspect))}
-                className="block max-w-full max-h-64 sm:max-h-none mx-auto border rounded shadow-sm touch-none"
+                className="block max-w-full max-h-64 mx-auto border rounded shadow-sm touch-none"
                 aria-label="Hintergrundvorschau"
                 onPointerDown={e => {
                   if (design.locked) return;

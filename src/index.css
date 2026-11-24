@@ -29,3 +29,18 @@
 .touch-none {
   touch-action: none;
 }
+
+/* The background designer can be narrowed to fit the space beside the sheet. */
+.background-design-window {
+  width: min(42rem, calc(100vw - 16px));
+  min-width: min(22rem, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  resize: horizontal;
+  container-type: inline-size;
+}
+
+@container (min-width: 32rem) {
+  .background-design-columns { grid-template-columns: 2fr 3fr; }
+  .background-design-preview { position: sticky; top: 0; }
+  .background-design-preview canvas { max-height: none; }
+}

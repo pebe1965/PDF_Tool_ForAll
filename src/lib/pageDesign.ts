@@ -131,8 +131,3 @@ export function designCanvas(design: PageDesign, width: number, height: number) 
   drawDesign(canvas.getContext('2d')!, design, canvas.width, canvas.height);
   return canvas;
 }
-
-export function backgroundPaint(ctx: CanvasRenderingContext2D, bg: PageBackground | undefined, w: number, h: number) {
-  if (!bg || typeof bg === 'string') return bg || '#ffffff';
-  return ctx.createPattern(designCanvas(bg, w, h), 'no-repeat')!;
-}
