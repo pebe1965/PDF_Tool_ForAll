@@ -154,13 +154,11 @@ const TextAnnotationItem: React.FC<{
   onStartResize,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [isEditing, setIsEditing] = useState<boolean>(!textAnn.text || textAnn.text.trim().length === 0);
+  const [isEditing, setIsEditing] = useState<boolean>(isSelected && !textAnn.text.trim());
 
   useEffect(() => {
     if (!isSelected) {
       setIsEditing(false);
-    } else if (!textAnn.text || textAnn.text.trim().length === 0) {
-      setIsEditing(true);
     }
   }, [isSelected]);
 
@@ -404,62 +402,41 @@ const TextAnnotationItem: React.FC<{
   const align = textAnn.textAlign || 'left';
 
   // Smart toolbar placement: flip below if near top of page (needs ~84px for 2-row word processor bar), and shift left if near right edge
-  const showToolbarBelow = topPx < 88;
-  const estimatedToolbarWidth = 660;
+  const showToolbarBelow = topPx < 180;
+  const estimatedToolbarWidth = Math.min(pageWidth - 16, 680);
   const toolbarOffsetLeft = Math.min(0, Math.max(-leftPx + 8, pageWidth - leftPx - estimatedToolbarWidth));
 
   return (
-    <div data-text-box={textAnn.id}
+    <div
       style={{
         position: 'absolute',
         left: `${leftPx}px`,
         top: `${topPx}px`,
         width: `${widthPx}px`,
-        backgroundColor: hasBackground ? textAnn.backgroundColor : undefined,
+
       }}
       onClick={(e) => {
         e.stopPropagation();
         onSelect();
       }}
-      className={`pointer-events-auto group transition-shadow ${
-        hasBackground ? 'rounded-lg shadow-sm border border-gray-300/60 p-1' : ''
-      } ${
-        isSelected
-          ? 'ring-2 ring-[#0071E3] ring-offset-2 rounded-xl bg-white/85 shadow-xl z-30'
-          : 'hover:ring-1 hover:ring-blue-300 rounded-xl hover:bg-white/40 z-10'
-      }`}
+      className={`group pointer-events-auto ${isSelected ? 'z-30' : 'z-10'}`}
     >
-      {/* Floating 2-Row Word-Processing Toolbar when Selected */}
-      {isSelected && (
+      {isSelected && isEditing && (
         <div
-          style={{ left: `${toolbarOffsetLeft}px` }}
+          style={{ left: toolbarOffsetLeft, width: estimatedToolbarWidth }}
           className={`absolute ${
-            showToolbarBelow ? 'top-full mt-2.5' : '-top-[82px]'
+            showToolbarBelow ? 'top-full mt-2.5' : 'bottom-full mb-7'
           } flex flex-col gap-1.5 bg-[#1D1D1F] text-white px-2.5 py-2 rounded-2xl shadow-2xl text-xs z-50 select-none whitespace-nowrap border border-white/10`}
           onPointerDown={(e) => e.stopPropagation()}
         >
           {/* Row 1: Font, Size, Style, Alignment, Color, Background, Actions */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
-              onClick={() => setIsEditing(!isEditing)}
-              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition ${
-                isEditing
-                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                  : 'bg-[#0071E3] hover:bg-blue-600 text-white'
-              }`}
-              title={isEditing ? 'Bearbeitung abschließen (Ansichtsmodus)' : 'Text bearbeiten'}
+              onClick={() => setIsEditing(false)}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold bg-emerald-600 hover:bg-emerald-500 text-white"
+              title="Bearbeitung abschließen (Ansichtsmodus)"
             >
-              {isEditing ? (
-                <>
-                  <Check size={12} />
-                  <span>Fertig</span>
-                </>
-              ) : (
-                <>
-                  <Edit3 size={12} />
-                  <span>Bearbeiten</span>
-                </>
-              )}
+              <Check size={12} /><span>Fertig</span>
             </button>
 
             <button
@@ -585,6 +562,9 @@ const TextAnnotationItem: React.FC<{
             <div className="w-[1px] h-3.5 bg-white/20" />
 
             <div className="flex items-center gap-1" title="Textfarbe">
+              <input type="color" aria-label="Textfarbe wählen" title="Freie Textfarbe wählen"
+                value={textAnn.color} onChange={e => onUpdate({ ...textAnn, color: e.target.value })}
+                className="w-6 h-5 cursor-pointer" />
               {['#000000', '#FFFFFF', '#0071E3', '#2BB3A3', '#F0A33A', '#E02020', '#107C41'].map((c) => (
                 <button
                   key={c}
@@ -598,6 +578,10 @@ const TextAnnotationItem: React.FC<{
             </div>
 
             <div className="flex items-center gap-1 bg-white/10 px-1.5 py-0.5 rounded-lg" title="Hintergrund / Text abdecken">
+              <input type="color" aria-label="Hintergrundfarbe wählen" title="Freie Hintergrundfarbe wählen"
+                value={hasBackground ? textAnn.backgroundColor : '#ffffff'}
+                onChange={e => onUpdate({ ...textAnn, backgroundColor: e.target.value })}
+                className="w-6 h-5 cursor-pointer" />
               <button
                 onClick={() => onUpdate({ ...textAnn, backgroundColor: 'transparent' })}
                 className={`text-[10px] px-1 py-0.5 rounded ${
@@ -669,7 +653,7 @@ const TextAnnotationItem: React.FC<{
           </div>
 
           {/* Row 2: Word-Processing Tools (Lists, Checklists, Headings, Divider, Date) */}
-          <div className="flex items-center gap-1.5 pt-1 border-t border-white/10">
+          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-white/10">
             <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mr-0.5">
               Format:
             </span>
@@ -738,15 +722,38 @@ const TextAnnotationItem: React.FC<{
               <Calendar size={12} />
               <span>Datum</span>
             </button>
+            <label className="flex items-center gap-1"><input type="checkbox"
+              checked={!!textAnn.textShadow} onChange={e => onUpdate({ ...textAnn, textShadow: e.target.checked })} />Schatten</label>
+            {textAnn.textShadow && <input type="color" aria-label="Schattenfarbe" title="Schattenfarbe"
+              value={textAnn.shadowColor || '#000000'} onChange={e => onUpdate({ ...textAnn, shadowColor: e.target.value })}
+              className="w-6 h-5 cursor-pointer" />}
+            <label className="flex items-center gap-1">Drehung
+              <input type="range" min="-180" max="180" value={textAnn.rotation || 0}
+                onChange={e => onUpdate({ ...textAnn, rotation: Number(e.target.value) })} className="w-24" />
+              <span className="w-9 text-right">{textAnn.rotation || 0}°</span>
+            </label>
+            {!!textAnn.rotation && <button title="Drehung zurücksetzen" onClick={() => onUpdate({ ...textAnn, rotation: 0 })}>↺</button>}
           </div>
         </div>
       )}
 
+      <div data-text-box={textAnn.id} style={{
+        transform: `rotate(${textAnn.rotation || 0}deg)`, transformOrigin: 'top left',
+        backgroundColor: hasBackground ? textAnn.backgroundColor : undefined,
+      }}
+      className={`relative w-full transition-shadow ${
+        hasBackground ? 'rounded-lg shadow-sm border border-gray-300/60 p-1' : ''
+      } ${
+        isSelected
+          ? 'ring-2 ring-[#0071E3] ring-offset-2 rounded-xl bg-white/85 shadow-xl z-30'
+          : 'hover:ring-1 hover:ring-blue-300 rounded-xl hover:bg-white/40 z-10'
+      }`}
+    >
       {/* External Drag Handle Tab (does not push or displace text inside box) */}
       {(isSelected || !isEditing) && (
         <div
-          onPointerDown={onStartDrag}
-          className={`absolute -top-6 left-0 flex items-center gap-1 px-2 py-0.5 rounded-t-md cursor-grab active:cursor-grabbing transition select-none z-30 text-[11px] font-semibold ${
+          onPointerDown={e => { setIsEditing(false); onStartDrag(e); }}
+          className={`absolute bottom-full left-0 flex items-center gap-1 px-2 py-0.5 rounded-t-md touch-none cursor-grab active:cursor-grabbing transition select-none z-30 text-[11px] font-semibold ${
             isSelected
               ? 'bg-[#0071E3] text-white shadow'
               : 'opacity-0 group-hover:opacity-100 bg-gray-700 text-white shadow-sm'
@@ -759,7 +766,9 @@ const TextAnnotationItem: React.FC<{
       )}
 
       {/* Box Inner Layout */}
-      <div className={`relative w-full ${hasBackground ? 'p-1.5' : 'p-0'}`}>
+      <div style={{ textShadow: textAnn.textShadow
+        ? `${2 * zoom}px ${2 * zoom}px 0 ${textAnn.shadowColor || '#000000'}99` : undefined }}
+        className={`relative w-full ${hasBackground ? 'p-1.5' : 'p-0'}`}>
         {isEditing ? (
           <textarea
             ref={textareaRef}
@@ -775,6 +784,7 @@ const TextAnnotationItem: React.FC<{
               fontStyle: textAnn.isItalic ? 'italic' : 'normal',
               textAlign: align,
               backgroundColor: 'transparent',
+              textShadow: 'inherit',
             }}
             className="w-full bg-transparent border-0 focus:outline-none resize-none p-0 m-0 overflow-hidden break-words"
             placeholder="Direkt losschreiben, Liste wählen oder mit Cmd+V / Strg+V einfügen..."
@@ -1007,6 +1017,7 @@ const TextAnnotationItem: React.FC<{
           </div>
         </>
       )}
+    </div>
     </div>
   );
 };
@@ -1324,6 +1335,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     y: number;
     initialAnnX: number;
     initialAnnY: number;
+    offsetX: number;
+    offsetY: number;
     width: number;
     height: number;
     targets: ReturnType<typeof alignmentTargets>;
@@ -1343,6 +1356,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   const [resizingTextId, setResizingTextId] = useState<string | null>(null);
   const [resizeTextStartPos, setResizeTextStartPos] = useState<{
     x: number;
+    y: number;
     initialW: number;
   } | null>(null);
 
@@ -1377,10 +1391,12 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     setDraggingId(ann.id);
     const textSizes = new Map(Array.from(containerRef.current!.querySelectorAll<HTMLElement>('[data-text-box]'),
       el => [el.dataset.textBox, el.getBoundingClientRect()] as const));
+    const origin = containerRef.current!.getBoundingClientRect();
     const boxes = pageAnnotations.flatMap(obj => {
       if (obj.type === 'drawing') return [];
       const rect = textSizes.get(obj.id);
-      return [{ id: obj.id, x: obj.x, y: obj.y,
+      return [{ id: obj.id, x: rect ? (rect.left - origin.left) / pageWidth : obj.x,
+        y: rect ? (rect.top - origin.top) / pageHeight : obj.y,
         width: obj.type === 'text' ? (rect?.width ?? pageWidth * .3) / pageWidth : obj.width,
         height: obj.type === 'text' ? (rect?.height ?? pageHeight * .04) / pageHeight : obj.height }];
     });
@@ -1388,8 +1404,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     setDragStartPos({
       x: e.clientX,
       y: e.clientY,
-      initialAnnX: ann.x,
-      initialAnnY: ann.y,
+      initialAnnX: box.x, initialAnnY: box.y,
+      offsetX: ann.x - box.x, offsetY: ann.y - box.y,
       width: box.width, height: box.height,
       targets: alignmentTargets(boxes.filter(item => item !== box)),
     });
@@ -1403,6 +1419,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     setResizingTextId(ann.id);
     setResizeTextStartPos({
       x: e.clientX,
+      y: e.clientY,
       initialW: ann.width || 0.3,
     });
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -1477,15 +1494,18 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       const x = alignAxis(dragStartPos.initialAnnX + deltaX, annWidth, targets.x, pageWidth, minX, maxX);
       const y = alignAxis(dragStartPos.initialAnnY + deltaY, annHeight, targets.y, pageHeight, minY, maxY);
       setGuides({ x: x.guide, y: y.guide });
-      onUpdateAnnotation({ ...ann, x: x.position, y: y.position });
+      onUpdateAnnotation({ ...ann, x: x.position + dragStartPos.offsetX, y: y.position + dragStartPos.offsetY });
     } else if (resizingTextId && resizeTextStartPos) {
       e.preventDefault();
-      const deltaX = (e.clientX - resizeTextStartPos.x) / pageWidth;
+
 
       const ann = annotations.find((a) => a.id === resizingTextId) as TextAnnotation | undefined;
       if (!ann || ann.type !== 'text') return;
 
-      const newW = Math.max(0.08, Math.min(0.98 - ann.x, resizeTextStartPos.initialW + deltaX));
+      const radians = (ann.rotation || 0) * Math.PI / 180;
+      const delta = (e.clientX - resizeTextStartPos.x) * Math.cos(radians) +
+        (e.clientY - resizeTextStartPos.y) * Math.sin(radians);
+      const newW = Math.max(0.08, Math.min(ann.rotation ? 1 : 0.98 - ann.x, resizeTextStartPos.initialW + delta / pageWidth));
       onUpdateAnnotation({
         ...ann,
         width: newW,

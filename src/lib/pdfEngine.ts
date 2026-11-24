@@ -3,6 +3,8 @@ import { burnRedactionsIntoPdf } from './pdfRedact';
 import {
   PDFArray,
   type PDFImage,
+  type PDFFont,
+  pushGraphicsState, popGraphicsState, concatTransformationMatrix,
   PDFDocument,
   PDFName,
   PDFPage,
@@ -261,6 +263,33 @@ function displayedPage(page: PDFPage) {
     a, b, c, d, x: x + tx, y: y + ty };
 }
 
+// Only the shadow is a bitmap. The foreground remains searchable PDF text.
+async function drawTextShadow(doc: PDFDocument, page: PDFPage, text: string, font: PDFFont,
+  size: number, x: number, baseline: number, color: string) {
+  const width = font.widthOfTextAtSize(text, size);
+  if (!width) return;
+  const padding = Math.ceil(size / 2);
+  const canvas = document.createElement('canvas');
+  const resolution = 3;
+  canvas.width = Math.ceil((width + 2 * padding) * resolution);
+  canvas.height = Math.ceil((size * 2 + padding) * resolution);
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(resolution, resolution);
+  const family = font.name.startsWith('Times') ? 'Times New Roman' :
+    font.name.startsWith('Courier') ? 'Courier New' : 'Arial';
+  const italic = /Italic|Oblique/.test(font.name) ? 'italic' : 'normal';
+  const weight = font.name.includes('Bold') ? 'bold' : 'normal';
+  ctx.font = `${italic} ${weight} ${size}px "${family}"`;
+  ctx.fillStyle = color;
+  ctx.translate(padding, size + padding);
+  ctx.scale(width / (ctx.measureText(text).width || width), 1);
+  ctx.fillText(text, 0, 0);
+  const image = await doc.embedPng(canvas.toDataURL('image/png'));
+  const height = canvas.height / resolution;
+  page.drawImage(image, { x: x + 2 - padding, y: baseline - 2 + size + padding - height,
+    width: canvas.width / resolution, height, opacity: 0.6 });
+}
+
 /**
  * Applies text, signature, image, highlight, shape, freehand drawing, true DSGVO redaction annotations,
  * and optional page backgrounds onto a PDF
@@ -459,7 +488,11 @@ export async function applyAnnotationsToPdf(
         console.error('Fehler beim Freihand-Zeichnen:', err);
       }
     } else if (ann.type === 'text') {
+      let transformed = false;
       try {
+        const view = displayedPage(page);
+        const pageWidth = view.width;
+        const pageHeight = view.height;
         const textColor = hexToRgb(ann.color || '#000000');
         const baseSize = ann.fontSize || 14;
 
@@ -481,7 +514,7 @@ export async function applyAnnotationsToPdf(
         // Convert normalized top-left coordinates to PDF bottom-left coordinates
         const pdfX = ann.x * pageWidth;
         const effectiveWidth = ann.width || 0.35;
-        const boxWidth = Math.min(pageWidth - pdfX, effectiveWidth * pageWidth);
+        const boxWidth = ann.rotation ? effectiveWidth * pageWidth : Math.min(pageWidth - pdfX, effectiveWidth * pageWidth);
 
         // Process lines and segment by typography (H1, H2, bullet, numbered, checklist, divider, body)
         const rawLines = ann.text.split('\n');
@@ -568,9 +601,20 @@ export async function applyAnnotationsToPdf(
         const hasBg = !!ann.backgroundColor && ann.backgroundColor !== 'transparent';
         const bgPad = hasBg ? 6 : 0;
 
+        if (ann.rotation || view.angle || view.x || view.y) {
+          const radians = -(ann.rotation || 0) * Math.PI / 180;
+          const cos = Math.cos(radians);
+          const sin = Math.sin(radians);
+          page.pushOperators(pushGraphicsState(),
+            concatTransformationMatrix(view.a, view.b, view.c, view.d, view.x, view.y),
+            concatTransformationMatrix(cos, sin, -sin, cos,
+              pdfX * (1 - cos) + boxTop * sin, boxTop * (1 - cos) - pdfX * sin));
+          transformed = true;
+        }
+
         // Draw background rectangle if configured
         if (hasBg) {
-          const isFullPageCover = ann.x <= 0.12 && (ann.width || 0.84) >= 0.8 && ann.y <= 0.12;
+          const isFullPageCover = !ann.rotation && ann.x <= 0.12 && (ann.width || 0.84) >= 0.8 && ann.y <= 0.12;
           const rectBottom = isFullPageCover ? 35 : Math.max(0, boxTop - totalHeight - bgPad * 2);
           const rectHeight = isFullPageCover
             ? Math.max(totalHeight + bgPad * 2, boxTop + bgPad - 35)
@@ -597,7 +641,7 @@ export async function applyAnnotationsToPdf(
           if (segIdx > 0) {
             currentY -= seg.topGap;
           }
-          if (currentY > 30) {
+          if (ann.rotation || currentY > 30) {
             if (seg.kind === 'divider') {
               const lineY = currentY + seg.size * 0.3;
               page.drawLine({
@@ -618,6 +662,8 @@ export async function applyAnnotationsToPdf(
                   });
                 } else if (seg.kind === 'numbered' && seg.marker) {
                   const safeMarker = sanitizeForPdf(seg.marker, boldFont);
+                  if (ann.textShadow) await drawTextShadow(pdfDoc, page, safeMarker, boldFont, seg.size,
+                    pdfX, currentY, ann.shadowColor || '#000000');
                   page.drawText(safeMarker, {
                     x: Math.max(0, pdfX),
                     y: Math.max(0, currentY),
@@ -680,9 +726,12 @@ export async function applyAnnotationsToPdf(
                   } catch (_) {}
                 }
 
+                const x = ann.rotation ? drawX : Math.max(0, drawX);
+                const y = ann.rotation ? currentY : Math.max(0, currentY);
+                if (ann.textShadow) await drawTextShadow(pdfDoc, page, seg.text, seg.font, seg.size,
+                  x, y, ann.shadowColor || '#000000');
                 page.drawText(seg.text, {
-                  x: Math.max(0, drawX),
-                  y: Math.max(0, currentY),
+                  x, y,
                   size: seg.size,
                   font: seg.font,
                   color: textColor,
@@ -694,6 +743,9 @@ export async function applyAnnotationsToPdf(
         }
       } catch (err) {
         console.error('Fehler beim Zeichnen des Texts:', err);
+        throw err;
+      } finally {
+        if (transformed) page.pushOperators(popGraphicsState());
       }
     } else if (ann.type === 'signature' || ann.type === 'image') {
       try {

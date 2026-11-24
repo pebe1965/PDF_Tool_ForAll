@@ -753,6 +753,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
       setSelectedAnnId(id);
       setActiveTool('select');
     } else if (activeTool === 'add-text') {
+      e.stopPropagation();
       const currentBg = pageBackgrounds[currentPage] || '#FFFFFF';
       const isDark = (() => {
         const clean = asDesign(currentBg).start.replace('#', '');

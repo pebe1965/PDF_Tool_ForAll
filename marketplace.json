@@ -5,7 +5,7 @@
   "integrations": [
     {
       "module": "Bearbeiten & Signieren",
-      "description": "Text einfügen, Unterschrift zeichnen, Textmarker, Symbole, Freihand-Stift und Bilder frei platzieren, gebogene Schriftzüge und WordArt mit Verläufen und 3D-Schatten im Rahmen linksbündig, mittig oder rechtsbündig ausrichten."
+      "description": "Textfelder drehen und mit freien Farben und Schatten gestalten, unterschreiben, Textmarker, Symbole, Freihandstriche und Bilder platzieren. Gebogene Schriftzüge und WordArt mit Verläufen und 3D-Schatten im Rahmen ausrichten."
     },
     {
       "module": "Unkenntlich machen",

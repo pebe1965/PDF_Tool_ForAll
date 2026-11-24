@@ -11,6 +11,9 @@ export interface TextAnnotation {
   fontFamily?: 'Helvetica' | 'Times' | 'Courier' | 'Impact' | 'Arial Black' | 'Playfair Display' | 'Dancing Script' | 'Caveat' | 'Cinzel' | 'Montserrat' | string;
   isBold?: boolean;
   isItalic?: boolean;
+  rotation?: number; // clockwise around the top-left corner
+  textShadow?: boolean;
+  shadowColor?: string;
   textAlign?: 'left' | 'center' | 'right';
   backgroundColor?: string; // 'transparent', '#FFFFFF', '#FEF08A'
 }
