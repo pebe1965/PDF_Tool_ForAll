@@ -144,6 +144,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
   const [pdfDoc, setPdfDoc] = useState<any | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [guidesEnabled, setGuidesEnabled] = useState(() => localStorage.getItem('pdf_tool_alignment_guides') !== 'off');
   const [scale, setScale] = useState<number>(1.2);
   const [loading, setLoading] = useState<boolean>(false);
   const [exporting, setExporting] = useState<boolean>(false);
@@ -2205,6 +2206,13 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                 >
                   <ZoomIn size={15} />
                 </button>
+                <button aria-pressed={guidesEnabled}
+                  className={`ml-1 px-2 py-1 rounded text-xs font-semibold ${guidesEnabled ? 'bg-white text-purple-700' : 'text-gray-600'}`}
+                  title="Beim Verschieben an Kanten und Mittellinien einrasten. Alt gedrückt halten, um frei zu verschieben."
+                  onClick={() => {
+                    localStorage.setItem('pdf_tool_alignment_guides', guidesEnabled ? 'off' : 'on');
+                    setGuidesEnabled(!guidesEnabled);
+                  }}>Hilfslinien</button>
               </div>
             </div>
 
@@ -2536,6 +2544,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
                   {/* Overlaid Interactive Annotations Layer */}
                   {canvasDimensions.width > 0 && (
                     <AnnotationLayer
+                      guidesEnabled={guidesEnabled}
                       pageNumber={currentPage}
                       pageWidth={canvasDimensions.width}
                       pageHeight={canvasDimensions.height}
@@ -2668,6 +2677,7 @@ export const PdfEditorView: React.FC<PdfEditorViewProps> = ({
 
       {/* Page Background Color Modal */}
       <PageBackgroundModal
+        guidesEnabled={guidesEnabled}
         isOpen={isBackgroundModalOpen}
         onClose={() => setIsBackgroundModalOpen(false)}
         currentPage={currentPage}

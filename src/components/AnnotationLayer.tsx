@@ -1,3 +1,5 @@
+import { alignAxis, alignmentTargets } from '../lib/alignment';
+import { AlignmentGuides, type GuidePosition } from './AlignmentGuides';
 import React, { useRef, useState, useEffect } from 'react';
 import {
   Trash2,
@@ -94,6 +96,7 @@ const REDACTION_METHOD_ICONS: Record<RedactMethod, React.ReactNode> = {
 };
 
 interface AnnotationLayerProps {
+  guidesEnabled: boolean;
   pageNumber: number;
   pageWidth: number; // rendered CSS pixel width of current page
   pageHeight: number; // rendered CSS pixel height of current page
@@ -405,7 +408,7 @@ const TextAnnotationItem: React.FC<{
   const toolbarOffsetLeft = Math.min(0, Math.max(-leftPx + 8, pageWidth - leftPx - estimatedToolbarWidth));
 
   return (
-    <div
+    <div data-text-box={textAnn.id}
       style={{
         position: 'absolute',
         left: `${leftPx}px`,
@@ -1294,6 +1297,7 @@ const ImageAnnotationItem: React.FC<{
 };
 
 export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
+  guidesEnabled,
   pageNumber,
   pageWidth,
   pageHeight,
@@ -1311,6 +1315,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  const [guides, setGuides] = useState<GuidePosition>({});
   // Dragging state
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragStartPos, setDragStartPos] = useState<{
@@ -1318,6 +1323,9 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     y: number;
     initialAnnX: number;
     initialAnnY: number;
+    width: number;
+    height: number;
+    targets: ReturnType<typeof alignmentTargets>;
   } | null>(null);
 
   // Resizing state for Signatures / Boxes (Highlight, Redaction, Shape, TextArt)
@@ -1366,11 +1374,23 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     e.stopPropagation();
     onSelectAnnotation(ann.id);
     setDraggingId(ann.id);
+    const textSizes = new Map(Array.from(containerRef.current!.querySelectorAll<HTMLElement>('[data-text-box]'),
+      el => [el.dataset.textBox, el.getBoundingClientRect()] as const));
+    const boxes = pageAnnotations.flatMap(obj => {
+      if (obj.type === 'drawing') return [];
+      const rect = textSizes.get(obj.id);
+      return [{ id: obj.id, x: obj.x, y: obj.y,
+        width: obj.type === 'text' ? (rect?.width ?? pageWidth * .3) / pageWidth : obj.width,
+        height: obj.type === 'text' ? (rect?.height ?? pageHeight * .04) / pageHeight : obj.height }];
+    });
+    const box = boxes.find(item => item.id === ann.id)!;
     setDragStartPos({
       x: e.clientX,
       y: e.clientY,
       initialAnnX: ann.x,
       initialAnnY: ann.y,
+      width: box.width, height: box.height,
+      targets: alignmentTargets(boxes.filter(item => item !== box)),
     });
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
@@ -1437,8 +1457,8 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       const ann = annotations.find((a) => a.id === draggingId);
       if (!ann || ann.type === 'drawing') return;
 
-      const annWidth = (ann as any).width || 0.2;
-      const annHeight = (ann as any).height || 0.04;
+      const annWidth = dragStartPos.width;
+      const annHeight = dragStartPos.height;
 
       // Shapes, images, redactions, highlights and textart can be placed flush to edges (0.0 .. 1.0)
       const isFullBleed =
@@ -1452,14 +1472,11 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       const minY = isFullBleed ? 0 : 0.005;
       const maxY = isFullBleed ? Math.max(0, 1.0 - annHeight) : Math.max(0.005, 0.995 - annHeight);
 
-      const newX = Math.max(minX, Math.min(maxX, dragStartPos.initialAnnX + deltaX));
-      const newY = Math.max(minY, Math.min(maxY, dragStartPos.initialAnnY + deltaY));
-
-      onUpdateAnnotation({
-        ...ann,
-        x: newX,
-        y: newY,
-      } as any);
+      const targets = guidesEnabled && !e.altKey ? dragStartPos.targets : { x: [], y: [] };
+      const x = alignAxis(dragStartPos.initialAnnX + deltaX, annWidth, targets.x, pageWidth, minX, maxX);
+      const y = alignAxis(dragStartPos.initialAnnY + deltaY, annHeight, targets.y, pageHeight, minY, maxY);
+      setGuides({ x: x.guide, y: y.guide });
+      onUpdateAnnotation({ ...ann, x: x.position, y: y.position });
     } else if (resizingTextId && resizeTextStartPos) {
       e.preventDefault();
       const deltaX = (e.clientX - resizeTextStartPos.x) / pageWidth;
@@ -1569,6 +1586,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       try {
         (e.target as HTMLElement).releasePointerCapture(e.pointerId);
       } catch (_) {}
+      setGuides({});
       setDraggingId(null);
       setDragStartPos(null);
     }
@@ -1600,7 +1618,10 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       className="absolute inset-0 pointer-events-none select-none overflow-visible"
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onLostPointerCapture={handlePointerUp}
     >
+      {guidesEnabled && draggingId && <AlignmentGuides {...guides} />}
       {pageAnnotations.map((ann) => {
         const isSelected = selectedAnnotationId === ann.id;
 

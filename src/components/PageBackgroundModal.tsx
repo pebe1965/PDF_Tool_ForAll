@@ -1,8 +1,11 @@
+import { alignAxis, alignmentTargets } from '../lib/alignment';
+import { AlignmentGuides, type GuidePosition } from './AlignmentGuides';
 import { asDesign, drawDesign, gradients, occasions, type PageDesign, type PageBackground } from '../lib/pageDesign';
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Palette, Check, RotateCcw } from 'lucide-react';
 
 export interface PageBackgroundModalProps {
+  guidesEnabled: boolean;
   isOpen: boolean;
   onClose: () => void;
   currentPage: number;
@@ -25,7 +28,7 @@ const PRESET_COLORS = [
 ];
 
 export const PageBackgroundModal: React.FC<PageBackgroundModalProps> = ({
-  isOpen,
+  guidesEnabled, isOpen,
   onClose,
   currentPage,
   numPages,
@@ -38,7 +41,8 @@ export const PageBackgroundModal: React.FC<PageBackgroundModalProps> = ({
   const [occasion, setOccasion] = useState('Weihnachten');
   const [selected, setSelected] = useState(-1);
   const preview = useRef<HTMLCanvasElement>(null);
-  const dragging = useRef(false);
+  const dragOffset = useRef<{ x: number; y: number } | null>(null);
+  const [guides, setGuides] = useState<GuidePosition>({});
   const change = (patch: Partial<PageDesign>) => setDesign(prev => ({ ...prev, ...patch }));
 
   useEffect(() => {
@@ -99,6 +103,7 @@ export const PageBackgroundModal: React.FC<PageBackgroundModalProps> = ({
           <div className="grid sm:grid-cols-[2fr_3fr] gap-5 items-start text-xs">
             <div className="sm:sticky sm:top-0 space-y-2">
               <h3 className="font-bold">Vorschau · Seite {currentPage}</h3>
+              <div className="relative w-fit max-w-full mx-auto">
               <canvas ref={preview} width={Math.round(600 * Math.min(1, aspect))}
                 height={Math.round(600 / Math.max(1, aspect))}
                 className="block max-w-full max-h-64 sm:max-h-none mx-auto border rounded shadow-sm touch-none"
@@ -110,16 +115,33 @@ export const PageBackgroundModal: React.FC<PageBackgroundModalProps> = ({
                     Math.abs(m.x-pos.x) < m.size * Math.min(1, 1/aspect) / 2 &&
                     Math.abs(m.y-pos.y) < m.size * Math.min(1, aspect) / 2).lastIndexOf(true);
                   setSelected(index);
-                  dragging.current = index >= 0;
+                  const motif = design.motifs[index];
+                  dragOffset.current = motif ? { x: pos.x - motif.x, y: pos.y - motif.y } : null;
                   e.currentTarget.setPointerCapture(e.pointerId);
                 }}
                 onPointerMove={e => {
-                  if (!dragging.current || design.locked) return;
+                  if (!dragOffset.current || design.locked || !design.motifs[selected]) return;
                   const pos = point(e);
-                  change({ motifs: design.motifs.map((m,i) => i === selected ? { ...m, ...pos } : m) });
+                  const bounds = e.currentTarget.getBoundingClientRect();
+                  const boxes = design.motifs.map(m => {
+                    const width = m.size * Math.min(1, 1 / aspect);
+                    const height = m.size * Math.min(1, aspect);
+                    return { x: m.x - width/2, y: m.y - height/2, width, height };
+                  });
+                  const box = boxes[selected];
+                  const targets = guidesEnabled && !e.altKey ? alignmentTargets(boxes.filter((_,i) => i !== selected)) : { x: [], y: [] };
+                  const snap = (center: number, offset: number, size: number, anchors: number[], pixels: number) =>
+                    alignAxis(center - offset - size/2, size, anchors, pixels, -size/2, 1-size/2);
+                  const x = snap(pos.x, dragOffset.current.x, box.width, targets.x, bounds.width);
+                  const y = snap(pos.y, dragOffset.current.y, box.height, targets.y, bounds.height);
+                  setGuides({ x: x.guide, y: y.guide });
+                  change({ motifs: design.motifs.map((m,i) => i === selected
+                    ? { ...m, x: x.position + box.width/2, y: y.position + box.height/2 } : m) });
                 }}
-                onLostPointerCapture={() => { dragging.current = false; }}
+                onLostPointerCapture={() => { dragOffset.current = null; setGuides({}); }}
               />
+              {guidesEnabled && <AlignmentGuides {...guides} />}
+              </div>
               <label className="flex gap-2 items-center font-semibold"><input type="checkbox" checked={design.locked}
                 onChange={e => change({ locked: e.target.checked })} />Hintergrund sperren</label>
             </div>
