@@ -1,3 +1,4 @@
+import { TextArtPreview } from './TextArtPreview';
 import { alignAxis, alignmentTargets } from '../lib/alignment';
 import { AlignmentGuides, type GuidePosition } from './AlignmentGuides';
 import React, { useRef, useState, useEffect } from 'react';
@@ -2146,10 +2147,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                 isSelected ? 'ring-2 ring-[#0071E3] ring-offset-2 rounded-xl z-20' : 'hover:ring-1 hover:ring-blue-300 rounded z-10'
               }`}
             >
-              <div
-                className="w-full h-full pointer-events-none select-none flex items-center justify-center overflow-visible"
-                dangerouslySetInnerHTML={{ __html: svgMarkup }}
-              />
+              <TextArtPreview markup={svgMarkup} align={art.textAlign} />
 
               {isSelected && (
                 <>
@@ -2168,6 +2166,13 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                       </button>
                     )}
 
+                    {(['left', 'center', 'right'] as const).map((align, i) => {
+                      const Icon = [AlignLeft, AlignCenter, AlignRight][i];
+                      return <button key={align} title={['Linksbündig', 'Zentriert', 'Rechtsbündig'][i]}
+                        aria-pressed={(art.textAlign ?? 'center') === align}
+                        onClick={() => onUpdateAnnotation({ ...art, textAlign: align })}
+                        className="p-1 rounded hover:bg-white/20 aria-pressed:bg-blue-600"><Icon size={14}/></button>;
+                    })}
                     {/* Volle Seitenbreite Button */}
                     <button
                       onClick={() => {

@@ -60,8 +60,24 @@ export const PageBackgroundModal: React.FC<PageBackgroundModalProps> = ({
   }, [isOpen, currentColor]);
   useEffect(() => {
     const canvas = preview.current;
-    if (isOpen && canvas) drawDesign(canvas.getContext('2d')!, design, canvas.width, canvas.height);
-  }, [design, isOpen, aspect]);
+    if (!isOpen || !canvas) return;
+    const ctx = canvas.getContext('2d')!;
+    drawDesign(ctx, design, canvas.width, canvas.height);
+    if (motif && !design.locked) {
+      const size = motif.size * Math.min(canvas.width, canvas.height);
+      const x = motif.x * canvas.width - size / 2;
+      const y = motif.y * canvas.height - size / 2;
+      const pixel = canvas.width / (canvas.clientWidth || canvas.width);
+      ctx.save();
+      ctx.lineWidth = 2 * pixel;
+      ctx.strokeStyle = '#1d4ed8';
+      ctx.strokeRect(x, y, size, size);
+      ctx.setLineDash([4 * pixel, 4 * pixel]);
+      ctx.strokeStyle = '#fff';
+      ctx.strokeRect(x, y, size, size);
+      ctx.restore();
+    }
+  }, [design, motif, isOpen, aspect]);
 
   if (!isOpen) return null;
   const point = (event: React.PointerEvent<HTMLCanvasElement>) => {

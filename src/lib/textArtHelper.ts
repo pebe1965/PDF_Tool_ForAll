@@ -639,25 +639,59 @@ export async function renderTextArtToPngBytes(
   const w = Math.max(160, Math.round(widthPt * scale));
   const h = Math.max(80, Math.round(heightPt * scale));
 
-  // Canonical 800x320 SVG space matching the editor preview 100%
-  const svgMarkup = buildTextArtSvgMarkup(art, 800, 320, `pdf_${art.id}_${Date.now()}`);
-  const blob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
+  const markup = buildTextArtSvgMarkup(art, 800, 320, 'export');
+  const canvas = await rasterizeTextArt(markup, w, h, art.textAlign);
+  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value =>
+    value ? resolve(value) : reject(new Error('TextArt konnte nicht gespeichert werden.')), 'image/png'));
+  return blob.arrayBuffer();
+}
 
-  const img = new Image();
-  await new Promise<void>((resolve, reject) => {
-    img.onload = () => resolve();
-    img.onerror = (e) => reject(new Error('Konnte TextArt nicht rendern'));
-    img.src = url;
-  });
-
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d')!;
-  ctx.drawImage(img, 0, 0, w, h);
-  URL.revokeObjectURL(url);
-
-  const dataUrl = canvas.toDataURL('image/png');
-  return await fetch(dataUrl).then((r) => r.arrayBuffer());
+// Align the painted pixels, including outline and shadow. The SVG viewBox
+// contains deliberate padding and its edge is not the edge of the lettering.
+export async function rasterizeTextArt(markup: string, w: number, h: number, align: TextArtAnnotation['textAlign']) {
+  const svg = new DOMParser().parseFromString(markup, 'image/svg+xml').documentElement;
+  svg.setAttribute('width', String(w));
+  svg.setAttribute('height', String(h));
+  const output = document.createElement('canvas');
+  output.width = w;
+  output.height = h;
+  const target = output.getContext('2d')!;
+  const aligned = align === 'left' || align === 'right';
+  const buffer = aligned ? document.createElement('canvas') : output;
+  buffer.width = w;
+  buffer.height = h;
+  const ctx = aligned ? buffer.getContext('2d', { willReadFrequently: true })! : target;
+  const paths = Array.from(svg.querySelectorAll('defs > path'));
+  const baselineIds = paths.map(item => item.id);
+  // Each baseline keeps its original curvature and vertical position.
+  for (const path of aligned ? paths : [null]) {
+    for (const other of paths) {
+      if (path && path !== other) other.removeAttribute('id');
+    }
+    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' }));
+    try {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(image, 0, 0);
+      if (aligned) {
+        const pixels = ctx.getImageData(0, 0, w, h).data;
+        let left = w, right = -1;
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            if (pixels[(y * w + x) * 4 + 3]) {
+              left = Math.min(left, x);
+              right = Math.max(right, x);
+            }
+          }
+        }
+        if (right >= left) target.drawImage(buffer, align === 'left' ? -left : w - right - 1, 0);
+      }
+    } finally {
+      URL.revokeObjectURL(url);
+      paths.forEach((item, i) => item.setAttribute('id', baselineIds[i]));
+    }
+  }
+  return output;
 }

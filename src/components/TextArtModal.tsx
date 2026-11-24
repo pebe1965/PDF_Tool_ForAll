@@ -1,3 +1,4 @@
+import { TextArtPreview } from './TextArtPreview';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
@@ -66,6 +67,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
   const [shadowColor, setShadowColor] = useState<string>(
     initialData?.shadowColor || '#1D1D1F'
   );
+  const [textAlign, setTextAlign] = useState<NonNullable<TextArtAnnotation['textAlign']>>('center');
   const [stretchToFit, setStretchToFit] = useState<boolean>(
     initialData?.stretchToFit !== false
   );
@@ -94,6 +96,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
   // Synchronisiere State bei jedem Öffnen oder Objektwechsel
   useEffect(() => {
     if (!isOpen) return;
+    setTextAlign(initialData?.textAlign ?? 'center');
     if (initialData) {
       setText(initialData.text || '');
       setFontFamily(initialData.fontFamily || 'Bungee');
@@ -216,6 +219,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
     has3dShadow,
     shadowColor,
     stretchToFit,
+    textAlign,
   };
 
   const previewSvg = buildTextArtSvgMarkup(currentPreviewArt, 800, 320, 'modal_preview', 'meet');
@@ -250,6 +254,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
       has3dShadow,
       shadowColor,
       stretchToFit,
+      textAlign,
     });
     onClose();
   };
@@ -309,10 +314,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                   : 'bg-white border-gray-200 shadow-inner'
               }`}
             >
-              <div
-                className="w-full h-full flex items-center justify-center overflow-visible"
-                dangerouslySetInnerHTML={{ __html: previewSvg }}
-              />
+              <TextArtPreview markup={previewSvg} align={textAlign} />
             </div>
           </div>
 
@@ -547,6 +549,13 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              <label className="block text-xs font-semibold">Ausrichtung im Rahmen
+                <select className="ml-2 p-1 rounded border" value={textAlign}
+                  onChange={e => setTextAlign(e.target.value as typeof textAlign)}>
+                  <option value="left">Linksbündig</option><option value="center">Zentriert</option><option value="right">Rechtsbündig</option>
+                </select>
+              </label>
 
               {/* Format & Seiten-Einpassung */}
               <div className="space-y-1.5 bg-gray-50 p-3 rounded-2xl border border-gray-200">

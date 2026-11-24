@@ -117,6 +117,7 @@ export interface TextArtAnnotation {
   letterSpacing?: number; // in px
   shadowColor?: string;
   has3dShadow?: boolean;
+  textAlign?: 'left' | 'center' | 'right';
   stretchToFit?: boolean; // true = fill full box (width & height), false = preserve aspect ratio
 }
 
