@@ -1,8 +1,13 @@
+import festiveMotifs from '../assets/festive-motifs.json';
+
 export interface Motif {
   symbol: string;
   x: number;
   y: number;
   size: number;
+  style?: 'original' | 'silhouette';
+  color?: string;
+  opacity?: number;
 }
 
 export interface PageDesign {
@@ -46,6 +51,35 @@ export const occasions: Record<string, [string, string][]> = {
   Sommerfest: [['🌻', 'Sonnenblume'], ['☀️', 'Sonne'], ['🦋', 'Schmetterling']],
 };
 
+// Artwork attribution is included in public/licenses/festive-motifs.txt.
+const motifPaths = new Map(Object.entries(festiveMotifs).map(([symbol, layers]) =>
+  [symbol, layers.map(layer => ({ fill: layer.fill, path: new Path2D(layer.path) }))] as const
+));
+
+function paintMotif(ctx: CanvasRenderingContext2D, motif: Motif, size: number, baseColor: string) {
+  const tint = motif.style === 'silhouette' ? motif.color ?? baseColor : undefined;
+  if (motif.symbol === 'Christbaumkugel') {
+    ctx.scale(size, size);
+    ctx.strokeStyle = tint ?? '#ab803e';
+    ctx.lineWidth = .025;
+    ctx.strokeRect(-.055, -.47, .11, .16);
+    ctx.fillStyle = tint ?? '#be3846';
+    ctx.beginPath();
+    ctx.arc(0, .07, .37, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.fillStyle = tint ?? '#f1cd83';
+    ctx.fillRect(-.10, -.34, .20, .08);
+    ctx.fillRect(-.36, .04, .72, .07);
+    return;
+  }
+  ctx.translate(-size / 2, -size / 2);
+  ctx.scale(size / 36, size / 36);
+  for (const layer of motifPaths.get(motif.symbol) ?? []) {
+    ctx.fillStyle = tint ?? layer.fill;
+    ctx.fill(layer.path);
+  }
+}
+
 export function drawDesign(ctx: CanvasRenderingContext2D, design: PageDesign, w: number, h: number) {
   ctx.save();
   ctx.fillStyle = '#fff';
@@ -66,26 +100,24 @@ export function drawDesign(ctx: CanvasRenderingContext2D, design: PageDesign, w:
   }
   ctx.fillRect(0, 0, w, h);
   for (const motif of design.motifs) {
-    ctx.save();
+    const opacity = Math.max(0, Math.min(100, motif.opacity ?? 100)) / 100;
     const size = Math.min(w, h) * motif.size;
+    if (!opacity || !(size > 0)) continue;
+    ctx.save();
     ctx.translate(w * motif.x, h * motif.y);
-    if (motif.symbol === 'Christbaumkugel') {
-      ctx.scale(size, size);
-      ctx.strokeStyle = '#ab803e';
-      ctx.lineWidth = .025;
-      ctx.strokeRect(-.055, -.47, .11, .16);
-      ctx.fillStyle = '#be3846';
-      ctx.beginPath();
-      ctx.arc(0, .07, .37, 0, 2 * Math.PI);
-      ctx.fill();
-      ctx.fillStyle = '#f1cd83';
-      ctx.fillRect(-.10, -.34, .20, .08);
-      ctx.fillRect(-.36, .04, .72, .07);
+    if (opacity === 1) {
+      paintMotif(ctx, motif, size, design.start);
     } else {
-      ctx.font = `${size}px "Apple Color Emoji","Segoe UI Emoji",sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(motif.symbol, 0, 0);
+      // Composite the finished illustration once, so overlapping colour areas
+      // have the same opacity as the rest of the motif.
+      const layer = document.createElement('canvas');
+      const side = Math.max(1, Math.ceil(size));
+      layer.width = layer.height = side;
+      const layerCtx = layer.getContext('2d')!;
+      layerCtx.translate(side / 2, side / 2);
+      paintMotif(layerCtx, motif, side, design.start);
+      ctx.globalAlpha = opacity;
+      ctx.drawImage(layer, -size / 2, -size / 2, size, size);
     }
     ctx.restore();
   }

@@ -1,8 +1,10 @@
 import { alignAxis, alignmentTargets } from '../lib/alignment';
 import { AlignmentGuides, type GuidePosition } from './AlignmentGuides';
-import { asDesign, drawDesign, gradients, occasions, type PageDesign, type PageBackground } from '../lib/pageDesign';
+import { asDesign, drawDesign, gradients, occasions, type Motif, type PageDesign, type PageBackground } from '../lib/pageDesign';
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Palette, Check, RotateCcw } from 'lucide-react';
+
+const motifNames = new Map(Object.values(occasions).flat());
 
 export interface PageBackgroundModalProps {
   guidesEnabled: boolean;
@@ -44,6 +46,10 @@ export const PageBackgroundModal: React.FC<PageBackgroundModalProps> = ({
   const dragOffset = useRef<{ x: number; y: number } | null>(null);
   const [guides, setGuides] = useState<GuidePosition>({});
   const change = (patch: Partial<PageDesign>) => setDesign(prev => ({ ...prev, ...patch }));
+
+  const motif = design.motifs[selected];
+  const updateMotif = (patch: Partial<Motif>) =>
+    change({ motifs: design.motifs.map((item, index) => index === selected ? { ...item, ...patch } : item) });
 
   useEffect(() => {
     if (isOpen) {
@@ -179,9 +185,29 @@ export const PageBackgroundModal: React.FC<PageBackgroundModalProps> = ({
                   setSelected(design.motifs.length);
                 }}>{symbol === label ? '🔴' : symbol} {label}</button>)}</div>
               {design.motifs.length > 0 && <p>Motiv in der Vorschau auswählen und verschieben.</p>}
-              {design.motifs[selected] && <div>
-                <label>Motivgröße <input type="range" min="4" max="65" value={Math.round(design.motifs[selected].size * 100)}
-                  onChange={e => change({ motifs: design.motifs.map((m,i) => i === selected ? { ...m, size: Number(e.target.value)/100 } : m) })}/></label>
+              {design.motifs.length > 0 && <label className="block">Motiv bearbeiten
+                <select className="ml-2 border rounded p-1" value={selected} onChange={e => setSelected(Number(e.target.value))}>
+                  <option value={-1}>Motiv wählen</option>
+                  {design.motifs.map((item, i) => <option key={i} value={i}>
+                    {i + 1}. {motifNames.get(item.symbol) ?? item.symbol}
+                  </option>)}
+                </select>
+              </label>}
+              {motif && <div className="space-y-3 rounded-lg border p-3">
+                <label className="block">Darstellung
+                  <select className="ml-2 border rounded p-1" value={motif.style ?? 'original'}
+                    onChange={e => updateMotif({ style: e.target.value as Motif['style'] })}>
+                    <option value="original">Originalfarben</option><option value="silhouette">Silhouette</option>
+                  </select>
+                </label>
+                {motif.style === 'silhouette' && <label className="block">Motivfarbe <input type="color"
+                  value={motif.color ?? design.start} onChange={e => updateMotif({ color: e.target.value })}/></label>}
+                <label className="block">Motivdeckkraft · {motif.opacity ?? 100} %
+                  <input className="block w-full" type="range" min="0" max="100" value={motif.opacity ?? 100}
+                    onChange={e => updateMotif({ opacity: Number(e.target.value) })}/>
+                </label>
+                <label className="block">Motivgröße <input className="block w-full" type="range" min="4" max="65"
+                  value={Math.round(motif.size * 100)} onChange={e => updateMotif({ size: Number(e.target.value)/100 })}/></label>
                 <button className="block underline" onClick={() => {
                   change({ motifs: design.motifs.filter((_,i) => i !== selected) }); setSelected(-1);
                 }}>Motiv entfernen</button>
