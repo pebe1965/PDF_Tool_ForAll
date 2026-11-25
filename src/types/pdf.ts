@@ -29,6 +29,8 @@ export interface SignatureAnnotation {
   dataUrl: string; // PNG base64
 }
 
+export const IMAGE_CORNER_RADIUS = 6.5; // PDF points
+
 export interface ImageAnnotation {
   id: string;
   type: 'image';

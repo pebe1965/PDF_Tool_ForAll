@@ -314,7 +314,7 @@ export const TextArtModal: React.FC<TextArtModalProps> = ({
                   : 'bg-white border-gray-200 shadow-inner'
               }`}
             >
-              <TextArtPreview markup={previewSvg} align={textAlign} />
+              <TextArtPreview text={currentPreviewArt.text} markup={previewSvg} align={textAlign} />
             </div>
           </div>
 

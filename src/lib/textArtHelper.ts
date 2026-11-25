@@ -646,10 +646,35 @@ export async function renderTextArtToPngBytes(
   return blob.arrayBuffer();
 }
 
+// SVGs decoded as images cannot load the web fonts used by inline SVG.
+const artFontWeights: Record<string, number> = {
+  'Alfa Slab One': 400, Anton: 400, 'Archivo Black': 400, Bungee: 400, Caveat: 700,
+  Cinzel: 900, 'Dancing Script': 700, Montserrat: 900, 'Paytone One': 400, 'Playfair Display': 900,
+};
+const embeddedFaces = new Map<string, string>();
+async function includeSvgFont(svg: Element) {
+  const family = svg.querySelector('text')?.getAttribute('font-family')?.split(',')[0].replace(/"/g, '').trim();
+  if (!family || !Object.prototype.hasOwnProperty.call(artFontWeights, family)) return;
+  let face = embeddedFaces.get(family);
+  if (!face) {
+    const slug = family.toLowerCase().replace(/ /g, '-');
+    const response = await fetch(`${import.meta.env.BASE_URL}design-fonts/${slug}-latin-${artFontWeights[family]}-normal.woff2`);
+    if (!response.ok) throw new Error(`Schrift „${family}“ konnte nicht geladen werden.`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const encoded = btoa(Array.from(bytes, b => String.fromCharCode(b)).join(''));
+    face = `@font-face{font-family:'${family}';font-weight:${artFontWeights[family]};src:url(data:font/woff2;base64,${encoded}) format('woff2')}`;
+    embeddedFaces.set(family, face);
+  }
+  const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+  style.textContent = face;
+  svg.prepend(style);
+}
+
 // Align the painted pixels, including outline and shadow. The SVG viewBox
 // contains deliberate padding and its edge is not the edge of the lettering.
 export async function rasterizeTextArt(markup: string, w: number, h: number, align: TextArtAnnotation['textAlign']) {
   const svg = new DOMParser().parseFromString(markup, 'image/svg+xml').documentElement;
+  await includeSvgFont(svg);
   svg.setAttribute('width', String(w));
   svg.setAttribute('height', String(h));
   const output = document.createElement('canvas');

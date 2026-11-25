@@ -35,6 +35,7 @@ import {
 import {
   TextAnnotation,
   SignatureAnnotation,
+  IMAGE_CORNER_RADIUS,
   ImageAnnotation,
   HighlightAnnotation,
   FormTextAnnotation,
@@ -1025,6 +1026,7 @@ const TextAnnotationItem: React.FC<{
 // Sub-component for inserted Image or Screenshot or Stamp
 const ImageAnnotationItem: React.FC<{
   imgAnn: ImageAnnotation;
+  scale: number;
   pageWidth: number;
   pageHeight: number;
   isSelected: boolean;
@@ -1040,6 +1042,7 @@ const ImageAnnotationItem: React.FC<{
   onStartBottomResize: (e: React.PointerEvent) => void;
 }> = ({
   imgAnn,
+  scale,
   pageWidth,
   pageHeight,
   isSelected,
@@ -1147,7 +1150,8 @@ const ImageAnnotationItem: React.FC<{
       <img
         src={imgAnn.dataUrl}
         alt={imgAnn.name || 'Bild'}
-        className="w-full h-full object-contain pointer-events-none rounded-lg"
+        style={{ borderRadius: IMAGE_CORNER_RADIUS * scale }}
+        className="w-full h-full object-contain pointer-events-none"
         draggable={false}
       />
 
@@ -1671,6 +1675,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
           return (
             <ImageAnnotationItem
               key={ann.id}
+              scale={scale || 1}
               imgAnn={ann as ImageAnnotation}
               pageWidth={pageWidth}
               pageHeight={pageHeight}
@@ -2167,7 +2172,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                 isSelected ? 'ring-2 ring-[#0071E3] ring-offset-2 rounded-xl z-20' : 'hover:ring-1 hover:ring-blue-300 rounded z-10'
               }`}
             >
-              <TextArtPreview markup={svgMarkup} align={art.textAlign} />
+              <TextArtPreview text={art.text} markup={svgMarkup} align={art.textAlign} />
 
               {isSelected && (
                 <>

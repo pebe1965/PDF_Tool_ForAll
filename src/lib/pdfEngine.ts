@@ -5,6 +5,7 @@ import {
   type PDFImage,
   type PDFFont,
   pushGraphicsState, popGraphicsState, concatTransformationMatrix,
+  moveTo, lineTo, appendBezierCurve, closePath, clip, endPath,
   PDFDocument,
   PDFName,
   PDFPage,
@@ -18,7 +19,9 @@ import {
   PDFRadioGroup,
 } from 'pdf-lib';
 import {
+  IMAGE_CORNER_RADIUS,
   Annotation,
+  TextAnnotation,
   MergePageItem,
   PdfFormFieldItem,
   PdfDocumentMetadata,
@@ -27,7 +30,7 @@ import {
 } from '../types/pdf';
 import { classifyLine } from './a4Pagination';
 import { pdfjsLib } from './pdfWorker';
-import { renderTextArtToPngBytes } from './textArtHelper';
+import { getFontFamilyCss, renderTextArtToPngBytes } from './textArtHelper';
 
 // Helper to convert hex color (#0071E3) to pdf-lib rgb(r, g, b)
 export function hexToRgb(hex: string) {
@@ -74,10 +77,9 @@ export function sanitizeForPdf(text: string, font?: any): string {
 }
 
 // Helper to wrap text into multiple lines if a max width is defined
-function wrapText(text: string, maxWidth: number, font: any, fontSize: number): string[] {
+function wrapText(text: string, maxWidth: number, measure: (text: string) => number): string[] {
   const resultLines: string[] = [];
-  const safeText = sanitizeForPdf(text, font);
-  const paragraphs = safeText.split('\n');
+  const paragraphs = text.split('\n');
 
   for (const para of paragraphs) {
     if (!para.trim()) {
@@ -90,7 +92,7 @@ function wrapText(text: string, maxWidth: number, font: any, fontSize: number): 
     for (const word of words) {
       const testLine = currentLine ? `${currentLine} ${word}` : word;
       try {
-        const textWidth = font.widthOfTextAtSize(testLine, fontSize);
+        const textWidth = measure(testLine);
         if (textWidth > maxWidth && currentLine) {
           resultLines.push(currentLine);
           currentLine = word;
@@ -237,10 +239,10 @@ export function applyPageBackground(doc: PDFDocument, page: PDFPage, hexColor: s
   const r = ((bigint >> 16) & 255) / 255;
   const g = ((bigint >> 8) & 255) / 255;
   const b = (bigint & 255) / 255;
-  const { width, height } = page.getSize();
+  const { x, y, width, height } = page.getCropBox();
 
   // q = push state, r g b rg = fill color, 0 0 w h re = rect, f = fill, Q = pop state
-  const bgContent = `q ${r.toFixed(4)} ${g.toFixed(4)} ${b.toFixed(4)} rg 0 0 ${width.toFixed(2)} ${height.toFixed(2)} re f Q`;
+  const bgContent = `q ${r.toFixed(4)} ${g.toFixed(4)} ${b.toFixed(4)} rg ${x} ${y} ${width.toFixed(2)} ${height.toFixed(2)} re f Q`;
   prependPageContent(doc, page, bgContent);
 }
 
@@ -261,6 +263,18 @@ function displayedPage(page: PDFPage) {
     : angle === 270 ? [0, -1, 1, 0, 0, height] : [1, 0, 0, 1, 0, 0];
   return { angle, width: angle % 180 ? height : width, height: angle % 180 ? width : height,
     a, b, c, d, x: x + tx, y: y + ty };
+}
+
+function clipImageFrame(page: PDFPage, x: number, y: number, width: number, height: number) {
+  const r = Math.min(IMAGE_CORNER_RADIUS, width / 2, height / 2);
+  const k = r * 0.55228475;
+  const right = x + width, top = y + height;
+  page.pushOperators(moveTo(x + r, y), lineTo(right - r, y),
+    appendBezierCurve(right - r + k, y, right, y + r - k, right, y + r),
+    lineTo(right, top - r), appendBezierCurve(right, top - r + k, right - r + k, top, right - r, top),
+    lineTo(x + r, top), appendBezierCurve(x + r - k, top, x, top - r + k, x, top - r),
+    lineTo(x, y + r), appendBezierCurve(x, y + r - k, x + r - k, y, x + r, y),
+    closePath(), clip(), endPath());
 }
 
 // Only the shadow is a bitmap. The foreground remains searchable PDF text.
@@ -288,6 +302,53 @@ async function drawTextShadow(doc: PDFDocument, page: PDFPage, text: string, fon
   const height = canvas.height / resolution;
   page.drawImage(image, { x: x + 2 - padding, y: baseline - 2 + size + padding - height,
     width: canvas.width / resolution, height, opacity: 0.6 });
+}
+
+// PDF standard fonts cannot reproduce browser or system display fonts. Paint
+// their actual glyphs and retain one searchable text run below the artwork.
+function browserLettering(ann: TextAnnotation) {
+  const ctx = document.createElement('canvas').getContext('2d')!;
+  const font = (size: number, bold: boolean) =>
+    `${ann.isItalic ? 'italic' : 'normal'} ${bold ? 'bold' : 'normal'} ${size}px ${getFontFamilyCss(ann.fontFamily)}`;
+  return {
+    measure(text: string, size: number, bold: boolean) {
+      ctx.font = font(size, bold);
+      return ctx.measureText(text).width;
+    },
+    baseline(text: string, size: number, bold: boolean, lineHeight: number) {
+      ctx.font = font(size, bold);
+      const m = ctx.measureText(text);
+      const ascent = m.fontBoundingBoxAscent ?? size * .8;
+      const descent = m.fontBoundingBoxDescent ?? size * .2;
+      return ascent + (lineHeight - ascent - descent) / 2;
+    },
+    async draw(doc: PDFDocument, page: PDFPage, text: string, size: number, bold: boolean, x: number, y: number) {
+      ctx.font = font(size, bold);
+      const metrics = ctx.measureText(text);
+      const left = Math.ceil(Math.max(0, metrics.actualBoundingBoxLeft)) + 2;
+      const top = Math.ceil(metrics.actualBoundingBoxAscent) + 2;
+      const width = Math.max(1, left + Math.ceil(metrics.actualBoundingBoxRight) + 4);
+      const height = Math.max(1, top + Math.ceil(metrics.actualBoundingBoxDescent) + 4);
+      const scale = Math.min(4, 8192 / Math.max(width, height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(width * scale);
+      canvas.height = Math.ceil(height * scale);
+      const paint = canvas.getContext('2d')!;
+      paint.scale(scale, scale);
+      paint.font = ctx.font;
+      if (ann.textShadow) {
+        paint.fillStyle = ann.shadowColor || '#000000';
+        paint.globalAlpha = .6;
+        paint.fillText(text, left + 2, top + 2);
+        paint.globalAlpha = 1;
+      }
+      paint.fillStyle = ann.color || '#000000';
+      paint.fillText(text, left, top);
+      const image = await doc.embedPng(canvas.toDataURL('image/png'));
+      page.drawImage(image, { x: x - left, y: y + top - canvas.height / scale,
+        width: canvas.width / scale, height: canvas.height / scale });
+    },
+  };
 }
 
 /**
@@ -368,7 +429,11 @@ export async function applyAnnotationsToPdf(
     if (pageIndex < 0 || pageIndex >= updatedPages.length) continue;
 
     const page = updatedPages[pageIndex];
-    const { width: pageWidth, height: pageHeight } = page.getSize();
+    const view = displayedPage(page);
+    const { width: pageWidth, height: pageHeight } = view;
+    const transformPage = ann.type !== 'form-text' && (view.angle || view.x || view.y);
+    if (transformPage) page.pushOperators(pushGraphicsState(),
+      concatTransformationMatrix(view.a, view.b, view.c, view.d, view.x, view.y));
 
     if (ann.type === 'form-text') {
       const form = pdfDoc.getForm();
@@ -380,7 +445,6 @@ export async function applyAnnotationsToPdf(
       while (taken.some(existing => existing === name || existing.startsWith(name + '.'))) name = `${base} (${suffix++})`;
       const field = form.createTextField(name);
       if (ann.multiline) field.enableMultiline();
-      const view = displayedPage(page);
       const left = ann.x * view.width;
       const bottom = (1 - ann.y - ann.height) * view.height;
       field.addToPage(page, {
@@ -406,6 +470,7 @@ export async function applyAnnotationsToPdf(
         });
       } catch (err) {
         console.error('Fehler beim Zeichnen des Textmarkers:', err);
+        throw err;
       }
     } else if (ann.type === 'shape') {
       try {
@@ -449,6 +514,7 @@ export async function applyAnnotationsToPdf(
         }
       } catch (err) {
         console.error('Fehler beim Zeichnen des Symbols:', err);
+        throw err;
       }
     } else if (ann.type === 'textart') {
       try {
@@ -467,6 +533,7 @@ export async function applyAnnotationsToPdf(
         });
       } catch (err) {
         console.error('Fehler beim Zeichnen von TextArt:', err);
+        throw err;
       }
     } else if (ann.type === 'drawing') {
       try {
@@ -486,13 +553,20 @@ export async function applyAnnotationsToPdf(
         }
       } catch (err) {
         console.error('Fehler beim Freihand-Zeichnen:', err);
+        throw err;
       }
     } else if (ann.type === 'text') {
       let transformed = false;
       try {
-        const view = displayedPage(page);
-        const pageWidth = view.width;
-        const pageHeight = view.height;
+        const lettering = ann.fontFamily && !['Helvetica', 'Times', 'Courier'].includes(ann.fontFamily)
+          ? browserLettering(ann) : null;
+        if (lettering) {
+          const family = getFontFamilyCss(ann.fontFamily);
+          const style = ann.isItalic ? 'italic' : 'normal';
+          // Includes annotations on pages that have never been shown in the editor.
+          await Promise.all(['normal', 'bold'].map(weight =>
+            document.fonts.load(`${style} ${weight} ${ann.fontSize || 14}px ${family}`, ann.text)));
+        }
         const textColor = hexToRgb(ann.color || '#000000');
         const baseSize = ann.fontSize || 14;
 
@@ -579,7 +653,9 @@ export async function applyAnnotationsToPdf(
               : 0;
 
           const availWidth = Math.max(40, boxWidth - indentX);
-          const wrappedSublines = wrapText(classified.text, availWidth, lineFont, lineSize);
+          const wrappedSublines = wrapText(lettering ? classified.text : sanitizeForPdf(classified.text, lineFont),
+            availWidth, value => lettering ? lettering.measure(value, lineSize, lineFont === boldFont)
+              : lineFont.widthOfTextAtSize(value, lineSize));
           for (let i = 0; i < wrappedSublines.length; i++) {
             segments.push({
               text: wrappedSublines[i],
@@ -601,12 +677,11 @@ export async function applyAnnotationsToPdf(
         const hasBg = !!ann.backgroundColor && ann.backgroundColor !== 'transparent';
         const bgPad = hasBg ? 6 : 0;
 
-        if (ann.rotation || view.angle || view.x || view.y) {
+        if (ann.rotation) {
           const radians = -(ann.rotation || 0) * Math.PI / 180;
           const cos = Math.cos(radians);
           const sin = Math.sin(radians);
           page.pushOperators(pushGraphicsState(),
-            concatTransformationMatrix(view.a, view.b, view.c, view.d, view.x, view.y),
             concatTransformationMatrix(cos, sin, -sin, cos,
               pdfX * (1 - cos) + boxTop * sin, boxTop * (1 - cos) - pdfX * sin));
           transformed = true;
@@ -633,7 +708,12 @@ export async function applyAnnotationsToPdf(
         // In PDF coordinates, page.drawText y is the font baseline.
         // The ascent of standard fonts (Helvetica/Times/Courier) is ~0.78 * font size.
         // To place the top edge of the first line exactly at boxTop - bgPad:
-        let currentY = boxTop - bgPad - (firstLineSize * 0.78);
+        const first = segments[0];
+        const baseline = lettering && first
+          ? lettering.baseline(first.text, first.size, first.font === boldFont, first.lineHeight) +
+            (first.kind === 'body' ? 2 : 0)
+          : firstLineSize * .78;
+        let currentY = boxTop - bgPad - baseline;
         const align = ann.textAlign || 'left';
 
         for (let segIdx = 0; segIdx < segments.length; segIdx++) {
@@ -662,9 +742,11 @@ export async function applyAnnotationsToPdf(
                   });
                 } else if (seg.kind === 'numbered' && seg.marker) {
                   const safeMarker = sanitizeForPdf(seg.marker, boldFont);
-                  if (ann.textShadow) await drawTextShadow(pdfDoc, page, safeMarker, boldFont, seg.size,
+                  if (lettering) await lettering.draw(pdfDoc, page, safeMarker, seg.size, true, pdfX, currentY);
+                  else if (ann.textShadow) await drawTextShadow(pdfDoc, page, safeMarker, boldFont, seg.size,
                     pdfX, currentY, ann.shadowColor || '#000000');
                   page.drawText(safeMarker, {
+                    opacity: lettering ? 0 : 1,
                     x: Math.max(0, pdfX),
                     y: Math.max(0, currentY),
                     size: seg.size,
@@ -717,7 +799,8 @@ export async function applyAnnotationsToPdf(
                 let drawX = pdfX + seg.indentX;
                 if (seg.indentX === 0 && (align === 'center' || align === 'right')) {
                   try {
-                    const tw = seg.font.widthOfTextAtSize(seg.text, seg.size);
+                    const tw = lettering ? lettering.measure(seg.text, seg.size, seg.font === boldFont)
+                      : seg.font.widthOfTextAtSize(seg.text, seg.size);
                     if (align === 'center') {
                       drawX = pdfX + Math.max(0, (boxWidth - tw) / 2);
                     } else if (align === 'right') {
@@ -728,10 +811,11 @@ export async function applyAnnotationsToPdf(
 
                 const x = ann.rotation ? drawX : Math.max(0, drawX);
                 const y = ann.rotation ? currentY : Math.max(0, currentY);
-                if (ann.textShadow) await drawTextShadow(pdfDoc, page, seg.text, seg.font, seg.size,
+                if (lettering) await lettering.draw(pdfDoc, page, seg.text, seg.size, seg.font === boldFont, x, y);
+                else if (ann.textShadow) await drawTextShadow(pdfDoc, page, seg.text, seg.font, seg.size,
                   x, y, ann.shadowColor || '#000000');
-                page.drawText(seg.text, {
-                  x, y,
+                page.drawText(lettering ? sanitizeForPdf(seg.text, seg.font) : seg.text, {
+                  opacity: lettering ? 0 : 1, x, y,
                   size: seg.size,
                   font: seg.font,
                   color: textColor,
@@ -762,16 +846,21 @@ export async function applyAnnotationsToPdf(
         const pdfX = ann.x * pageWidth;
         const pdfY = pageHeight - ((ann.y + ann.height) * pageHeight);
 
+        const fit = Math.min(imgWidth / embeddedImage.width, imgHeight / embeddedImage.height);
+        const width = embeddedImage.width * fit;
+        const height = embeddedImage.height * fit;
+        page.pushOperators(pushGraphicsState());
+        if (ann.type === 'image') clipImageFrame(page, pdfX, pdfY, imgWidth, imgHeight);
         page.drawImage(embeddedImage, {
-          x: Math.max(0, pdfX),
-          y: Math.max(0, pdfY),
-          width: imgWidth,
-          height: imgHeight,
+          x: pdfX + (imgWidth - width) / 2, y: pdfY + (imgHeight - height) / 2, width, height,
         });
+        page.pushOperators(popGraphicsState());
       } catch (err) {
         console.error('Fehler beim Einbetten des Bildes/der Signatur:', err);
+        throw err;
       }
     }
+    if (transformPage) page.pushOperators(popGraphicsState());
   }
 
   return await pdfDoc.save();

@@ -68,7 +68,7 @@ export async function burnRedactionsIntoPdf(
       canvas.height = 0;
       const image = await pdfDoc.embedJpg(jpgBytes);
 
-      const { width, height } = pdfDoc.getPage(pageIndex).getSize();
+      const { width, height } = pdfJsPage.getViewport({ scale: 1 });
       const newPage = pdfDoc.insertPage(pageIndex, [width, height]);
       pdfDoc.removePage(pageIndex + 1);
       newPage.drawImage(image, { x: 0, y: 0, width, height });

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { rasterizeTextArt } from '../lib/textArtHelper';
 import type { TextArtAnnotation } from '../types/pdf';
 
-export function TextArtPreview({ markup, align }: { markup: string; align: TextArtAnnotation['textAlign'] }) {
+export function TextArtPreview({ markup, align, text }: { markup: string; text: string; align: TextArtAnnotation['textAlign'] }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -26,7 +26,5 @@ export function TextArtPreview({ markup, align }: { markup: string; align: TextA
     observer.observe(canvas);
     return () => { revision++; observer.disconnect(); };
   }, [markup, align]);
-  return align === 'left' || align === 'right'
-    ? <canvas ref={ref} className="block w-full h-full pointer-events-none" />
-    : <div className="w-full h-full pointer-events-none" dangerouslySetInnerHTML={{ __html: markup }} />;
+  return <canvas ref={ref} role="img" aria-label={text} className="block w-full h-full pointer-events-none" />;
 }
